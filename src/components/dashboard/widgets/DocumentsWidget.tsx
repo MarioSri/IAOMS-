@@ -66,6 +66,42 @@ export const DocumentsWidget: React.FC<DocumentsWidgetProps> = ({
   const [showAISummarizer, setShowAISummarizer] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
 
+  // Helper function to check if current user is in recipients list
+  const isUserInRecipients = (doc: any): boolean => {
+    // If no recipients specified, show to everyone (for backward compatibility)
+    if (!doc.recipients || doc.recipients.length === 0) {
+      return true;
+    }
+    
+    // Check if current user matches any recipient
+    const currentUserName = user?.fullName || user?.name || '';
+    const currentUserRole = user?.role || '';
+    
+    return doc.recipients.some((recipient: string) => {
+      // Match by full name
+      if (recipient.toLowerCase() === currentUserName.toLowerCase()) {
+        return true;
+      }
+      
+      // Match by role (e.g., "Principal", "Registrar", "HOD")
+      if (recipient.toLowerCase() === currentUserRole.toLowerCase()) {
+        return true;
+      }
+      
+      // Match by role with department (e.g., "HOD - Computer Science")
+      if (recipient.toLowerCase().includes(currentUserRole.toLowerCase())) {
+        return true;
+      }
+      
+      // Match if recipient contains user's name
+      if (currentUserName && recipient.toLowerCase().includes(currentUserName.toLowerCase())) {
+        return true;
+      }
+      
+      return false;
+    });
+  };
+
   useEffect(() => {
     // Load Pending Approvals from Approval Center
     const fetchDocuments = async () => {
@@ -137,8 +173,8 @@ export const DocumentsWidget: React.FC<DocumentsWidgetProps> = ({
           }
         ];
         
-        // Combine stored and static documents
-        allPendingDocs = [...storedApprovals, ...staticPendingDocs];
+        // Combine stored and static documents, then filter by recipient visibility
+        allPendingDocs = [...storedApprovals, ...staticPendingDocs].filter(doc => isUserInRecipients(doc));
       }
 
       setTimeout(() => {

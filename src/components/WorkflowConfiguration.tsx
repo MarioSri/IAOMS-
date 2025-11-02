@@ -272,6 +272,23 @@ export const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ cl
       
       // Create approval card for Approval Center following "Budget Request – Lab Equipment" layout
       if (selectedRecipients.length > 0) {
+        // Map recipient IDs to names
+        const getRecipientName = (recipientId: string) => {
+          const recipientMap: { [key: string]: string } = {
+            'principal-dr-robert-principal': 'Dr. Robert Smith',
+            'registrar-prof-sarah-registrar': 'Prof. Sarah Registrar',
+            'hod-dr-cse-hod-cse': 'Dr. Michael Chen',
+            'hod-dr-eee-hod-eee': 'Dr. Mohammed Ali',
+            'hod-dr-mech-hod-mech': 'Dr. MECH HOD',
+            'hod-dr-ece-hod-ece': 'Dr. ECE HOD',
+            'program-department-head-prof-cse-head-cse': 'Prof. CSE Head',
+            'program-department-head-prof-eee-head-eee': 'Prof. EEE Head',
+            'dean-dr-maria-dean': 'Dr. Maria Garcia',
+            'controller-of-examinations-dr-robert-controller': 'Dr. Robert Controller'
+          };
+          return recipientMap[recipientId] || recipientId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        };
+        
         const approvalCard = {
           id: trackingCard.id,
           title: documentTitle,
@@ -281,6 +298,7 @@ export const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ cl
           status: 'pending',
           priority: documentPriority,
           description: documentDescription,
+          recipients: selectedRecipients.map((id: string) => getRecipientName(id)),
           files: serializedFiles
         };
         

@@ -485,6 +485,42 @@ const Approvals = () => {
     }
   ];
   
+  // Helper function to check if current user is in recipients list
+  const isUserInRecipients = (doc: any): boolean => {
+    // If no recipients specified, show to everyone (for backward compatibility)
+    if (!doc.recipients || doc.recipients.length === 0) {
+      return true;
+    }
+    
+    // Check if current user matches any recipient
+    const currentUserName = user?.fullName || user?.name || '';
+    const currentUserRole = user?.role || '';
+    
+    return doc.recipients.some((recipient: string) => {
+      // Match by full name
+      if (recipient.toLowerCase() === currentUserName.toLowerCase()) {
+        return true;
+      }
+      
+      // Match by role (e.g., "Principal", "Registrar", "HOD")
+      if (recipient.toLowerCase() === currentUserRole.toLowerCase()) {
+        return true;
+      }
+      
+      // Match by role with department (e.g., "HOD - Computer Science")
+      if (recipient.toLowerCase().includes(currentUserRole.toLowerCase())) {
+        return true;
+      }
+      
+      // Match if recipient contains user's name
+      if (currentUserName && recipient.toLowerCase().includes(currentUserName.toLowerCase())) {
+        return true;
+      }
+      
+      return false;
+    });
+  };
+
   useEffect(() => {
     const loadPendingApprovals = () => {
       const stored = JSON.parse(localStorage.getItem('pending-approvals') || '[]');
@@ -641,7 +677,7 @@ const Approvals = () => {
                   <Clock className="h-6 w-6 text-warning" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{pendingApprovals.length + 4}</p>
+                  <p className="text-2xl font-bold">{pendingApprovals.filter(doc => isUserInRecipients(doc)).length + 4}</p>
                   <p className="text-sm text-muted-foreground">Pending Approvals</p>
                 </div>
               </div>
@@ -693,7 +729,7 @@ const Approvals = () => {
               <CardContent>
                 <div className="space-y-4">
                   {/* Dynamic Submitted Documents */}
-                  {pendingApprovals.map((doc) => (
+                  {pendingApprovals.filter(doc => isUserInRecipients(doc)).map((doc) => (
                     <Card key={doc.id} className={`hover:shadow-md transition-shadow ${doc.isEmergency ? 'border-destructive bg-red-50 animate-pulse' : ''}`}>
                       <CardContent className="p-6">
                         <div className="flex flex-col lg:flex-row gap-6">
