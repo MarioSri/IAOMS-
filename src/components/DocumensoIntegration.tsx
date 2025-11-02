@@ -667,25 +667,84 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
     handlePreviewMouseUp();
   };
 
+  // Complete transparency with ink enhancement
+  const removeWhiteBackground = (imageData: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return resolve(imageData);
+          
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          
+          const imageDataObj = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageDataObj.data;
+          
+          // Complete background removal + ink enhancement
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+            
+            // Remove ALL light backgrounds - 100% transparent
+            if (luminance > 160) {
+              data[i + 3] = 0; // Completely transparent
+            }
+            // Convert medium tones to dark ink
+            else if (luminance > 80) {
+              data[i] = 0;     // Pure black ink
+              data[i + 1] = 0;
+              data[i + 2] = 0;
+              data[i + 3] = 255; // Fully opaque
+            }
+            // Enhance existing dark pixels to pure black
+            else {
+              data[i] = 0;     // Pure black
+              data[i + 1] = 0;
+              data[i + 2] = 0;
+              data[i + 3] = 255; // Fully opaque
+            }
+          }
+          
+          ctx.putImageData(imageDataObj, 0, 0);
+          resolve(canvas.toDataURL('image/png'));
+        } catch (error) {
+          resolve(imageData);
+        }
+      };
+      img.onerror = () => resolve(imageData);
+      img.crossOrigin = 'anonymous';
+      img.src = imageData;
+    });
+  };
+
   const saveUploadedSignature = (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const signatureData = e.target?.result as string;
+    reader.onload = async (e) => {
+      const originalData = e.target?.result as string;
+      
+      // Remove white background automatically
+      const transparentData = await removeWhiteBackground(originalData);
+      
       const newSignature = {
         id: Date.now().toString(),
         name: file.name,
-        data: signatureData,
+        data: transparentData,
         type: 'upload' as const
       };
       
       setSavedSignatures(prev => [...prev, newSignature]);
       
       // Automatically place signature on document
-      placeSignatureOnDocument(signatureData);
+      placeSignatureOnDocument(transparentData);
       
       toast({
         title: "Signature Saved and Placed",
-        description: "Your uploaded signature has been saved to library and placed on document."
+        description: "Background removed and signature placed on document."
       });
     };
     reader.readAsDataURL(file);
@@ -738,7 +797,7 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
     setCameraActive(false);
   };
 
-  const captureSignature = () => {
+  const captureSignature = async () => {
     const video = videoRef.current;
     if (!video) return;
     
@@ -750,17 +809,20 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
     if (!ctx) return;
     
     ctx.drawImage(video, 0, 0);
-    const imageData = canvas.toDataURL('image/png');
+    const originalData = canvas.toDataURL('image/png');
     
-    setCapturedSignature(imageData);
+    // Remove white background from captured image
+    const transparentData = await removeWhiteBackground(originalData);
+    
+    setCapturedSignature(transparentData);
     stopCamera();
     
     // Automatically place signature on document
-    placeSignatureOnDocument(imageData);
+    placeSignatureOnDocument(transparentData);
     
     toast({
       title: "Signature Captured and Placed",
-      description: "Signature has been captured and placed on document."
+      description: "Background removed and signature placed on document."
     });
   };
 
@@ -955,7 +1017,7 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
                           {placedSignatures.map((signature) => (
                             <div
                               key={signature.id}
-                              className={`absolute cursor-move select-none ${selectedSignatureId === signature.id ? 'ring-2 ring-blue-500/50' : ''}`}
+                              className={`absolute cursor-pointer select-none transition-all duration-200 ${selectedSignatureId === signature.id ? 'ring-2 ring-blue-400/60 shadow-lg' : 'hover:shadow-md'}`}
                               style={{
                                 left: `${signature.x}px`,
                                 top: `${signature.y}px`,
@@ -963,19 +1025,25 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
                                 height: `${signature.height}px`,
                                 transform: `rotate(${signature.rotation}deg)`,
                                 transformOrigin: 'center',
-                                zIndex: selectedSignatureId === signature.id ? 50 : 40,
+                                zIndex: selectedSignatureId === signature.id ? 50 : 10,
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedSignatureId(signature.id);
                               }}
                               onMouseDown={(e) => handleSignatureMouseDown(e, signature.id)}
                             >
-                              {/* Signature Image */}
+                              {/* Signature Image - Authentic ink absorption */}
                               <img
                                 src={signature.data}
                                 alt="Signature"
-                                className="w-full h-full object-contain"
-                                style={{ background: 'transparent' }}
+                                className="w-full h-full object-contain pointer-events-none"
+                                style={{ 
+                                  background: 'transparent',
+                                  mixBlendMode: 'multiply',
+                                  opacity: 1
+                                }}
                                 draggable={false}
-                                onError={(e) => console.error('Image failed to load:', signature.id)}
-                                onLoad={() => console.log('Image loaded successfully:', signature.id)}
                               />
 
                               {/* Control Buttons (when selected) */}
