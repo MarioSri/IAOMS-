@@ -11,10 +11,18 @@ const TrackDocuments = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [viewingFile, setViewingFile] = useState<File | null>(null);
+  const [viewingFiles, setViewingFiles] = useState<File[]>([]);
   const [showFileViewer, setShowFileViewer] = useState(false);
 
   const handleViewFile = (file: File) => {
     setViewingFile(file);
+    setViewingFiles([]);
+    setShowFileViewer(true);
+  };
+
+  const handleViewFiles = (files: File[]) => {
+    setViewingFiles(files);
+    setViewingFile(null);
     setShowFileViewer(true);
   };
 
@@ -40,17 +48,20 @@ const TrackDocuments = () => {
         </div>
 
         <div className="space-y-6">
-          <DocumentTracker userRole={user.role} onViewFile={handleViewFile} />
+          <DocumentTracker 
+            userRole={user.role} 
+            onViewFile={handleViewFile}
+            onViewFiles={handleViewFiles}
+          />
         </div>
       </div>
       
-      {viewingFile && (
-        <FileViewer
-          file={viewingFile}
-          open={showFileViewer}
-          onOpenChange={setShowFileViewer}
-        />
-      )}
+      <FileViewer
+        file={viewingFile}
+        files={viewingFiles.length > 0 ? viewingFiles : undefined}
+        open={showFileViewer}
+        onOpenChange={setShowFileViewer}
+      />
     </DashboardLayout>
   );
 };

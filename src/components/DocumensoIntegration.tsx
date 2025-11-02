@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { CheckCircle2, FileText, PenTool, Shield, User, Calendar, Download, Upload, Eye, Settings, Signature, Lock, Globe, Mail, Phone, Camera, Scan, Bot, Target, Zap, MapPin, Search, Loader2, ZoomIn, ZoomOut, RotateCw, X, RotateCcw, Move } from 'lucide-react';
+import { CheckCircle2, FileText, PenTool, Shield, User, Calendar, Download, Upload, Eye, Settings, Signature, Lock, Globe, Mail, Phone, Camera, Scan, Bot, Target, Zap, MapPin, Search, Loader2, ZoomIn, ZoomOut, RotateCw, X, RotateCcw, Move, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { aiSignaturePlacement, SignatureZone, DocumentAnalysis } from '@/services/aiSignaturePlacement';
 import { SignaturePlacementPreview } from '@/components/SignaturePlacementPreview';
@@ -39,7 +39,8 @@ interface DocumensoIntegrationProps {
     email: string;
     role: string;
   };
-  file?: File; // Document file to preview
+  file?: File; // Single document file to preview
+  files?: File[]; // Multiple document files to preview
 }
 
 export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
@@ -48,7 +49,8 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
   onComplete,
   document,
   user,
-  file
+  file,
+  files
 }) => {
   const [signingProgress, setSigningProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -72,6 +74,11 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
   const [fileError, setFileError] = useState<string | null>(null);
   const [fileZoom, setFileZoom] = useState(100);
   const [fileRotation, setFileRotation] = useState(0);
+  
+  // Multi-file navigation state
+  const [currentFileIndex, setCurrentFileIndex] = useState(0);
+  const isMultiFile = files && files.length > 1;
+  const currentFile = isMultiFile ? files[currentFileIndex] : file;
   
   // Signature placement on document
   const [placedSignatures, setPlacedSignatures] = useState<Array<{
@@ -114,9 +121,16 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
     webhookUrl: 'https://iaoms.edu/webhooks/documenso'
   });
 
-  // Load file content when file prop changes
+  // Reset file index when modal opens or files change
   React.useEffect(() => {
-    if (!file || !isOpen) {
+    if (isOpen) {
+      setCurrentFileIndex(0);
+    }
+  }, [isOpen, files]);
+
+  // Load file content when current file changes
+  React.useEffect(() => {
+    if (!currentFile || !isOpen) {
       setFileContent(null);
       setFileError(null);
       return;
@@ -127,20 +141,20 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
       setFileError(null);
       
       try {
-        const fileType = file.type;
-        const fileName = file.name.toLowerCase();
+        const fileType = currentFile.type;
+        const fileName = currentFile.name.toLowerCase();
 
         if (fileType.includes('pdf') || fileName.endsWith('.pdf')) {
-          await loadPDF(file);
+          await loadPDF(currentFile);
         } else if (fileType.includes('image')) {
-          await loadImageFile(file);
+          await loadImageFile(currentFile);
         } else if (fileType.includes('word') || fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
-          await loadWord(file);
+          await loadWord(currentFile);
         } else if (fileType.includes('sheet') || fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-          await loadExcel(file);
+          await loadExcel(currentFile);
         } else if (fileName.endsWith('.html')) {
           // Handle HTML files
-          const text = await file.text();
+          const text = await currentFile.text();
           setFileContent({ type: 'word', html: text });
         } else {
           setFileContent({ type: 'unsupported' });
@@ -154,10 +168,27 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
     };
 
     loadFile();
-  }, [file, isOpen]);
+  }, [currentFile, isOpen]);
+
+  // Multi-file navigation handlers
+  const handlePreviousFile = () => {
+    if (isMultiFile && currentFileIndex > 0) {
+      setCurrentFileIndex(prev => prev - 1);
+      setFileZoom(100);
+      setFileRotation(0);
+    }
+  };
+
+  const handleNextFile = () => {
+    if (isMultiFile && files && currentFileIndex < files.length - 1) {
+      setCurrentFileIndex(prev => prev + 1);
+      setFileZoom(100);
+      setFileRotation(0);
+    }
+  };
 
   const handleViewFile = () => {
-    if (file) {
+    if (currentFile) {
       setShowFileViewer(true);
     }
   };
@@ -860,9 +891,42 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
           <div className="border-r pr-6">
             <Card className="h-full flex flex-col">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                  Document Preview
+                <CardTitle className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-blue-600" />
+                    Document Preview
+                  </div>
+                  
+                  {/* Multi-File Navigation Controls */}
+                  {isMultiFile && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handlePreviousFile}
+                        disabled={currentFileIndex === 0}
+                        title="Previous File"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      
+                      <Badge variant="secondary" className="text-xs">
+                        {currentFileIndex + 1} of {files?.length}
+                      </Badge>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleNextFile}
+                        disabled={currentFileIndex === (files?.length ?? 1) - 1}
+                        title="Next File"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                      
+                      <div className="h-6 w-px bg-gray-300 mx-1" />
+                    </div>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex-1 flex flex-col overflow-hidden p-0">
@@ -1523,9 +1587,10 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
     </Dialog>
 
     {/* FileViewer Modal */}
-    {file && (
+    {(file || (files && files.length > 0)) && (
       <FileViewer
-        file={file}
+        file={file || undefined}
+        files={files && files.length > 0 ? files : undefined}
         open={showFileViewer}
         onOpenChange={setShowFileViewer}
       />

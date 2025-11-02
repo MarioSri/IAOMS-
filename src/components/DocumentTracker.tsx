@@ -37,6 +37,7 @@ import { useToast } from "@/hooks/use-toast";
 interface DocumentTrackerProps {
   userRole: string;
   onViewFile?: (file: File) => void;
+  onViewFiles?: (files: File[]) => void; // Support for multiple files
 }
 
 interface Document {
@@ -198,7 +199,7 @@ const mockDocuments: Document[] = [
   }
 ];
 
-export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onViewFile }) => {
+export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onViewFile, onViewFiles }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -831,39 +832,48 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
                     Remove
                   </Button>
                   <Button variant="outline" size="sm" onClick={async () => {
-                    if (onViewFile) {
-                      // Check if document has uploaded files (emergency documents)
-                      const documentFiles = (document as any).files;
-                      if (documentFiles && documentFiles.length > 0) {
-                        const file = documentFiles[0];
-                        const fileName = file.name || 'Unknown File';
-                        const fileType = file.type || 'application/octet-stream';
-                        const fileData = file.data || file;
+                    const documentFiles = (document as any).files;
+                    
+                    // Check if document has multiple uploaded files
+                    if (documentFiles && documentFiles.length > 0) {
+                      try {
+                        // Reconstruct all files from base64
+                        const reconstructedFiles: File[] = [];
                         
-                        // If file has base64 data, reconstruct File object
-                        if (typeof fileData === 'string' && fileData.startsWith('data:')) {
-                          try {
+                        for (const file of documentFiles) {
+                          const fileName = file.name || 'Unknown File';
+                          const fileType = file.type || 'application/octet-stream';
+                          const fileData = file.data || file;
+                          
+                          // If file has base64 data, reconstruct File object
+                          if (typeof fileData === 'string' && fileData.startsWith('data:')) {
                             const response = await fetch(fileData);
                             const blob = await response.blob();
                             const reconstructedFile = new File([blob], fileName, { type: fileType });
-                            onViewFile(reconstructedFile);
-                          } catch (error) {
-                            console.error('Error reconstructing file:', error);
-                            toast({
-                              title: "Error",
-                              description: "Failed to load file",
-                              variant: "destructive"
-                            });
+                            reconstructedFiles.push(reconstructedFile);
+                          } else if (fileData instanceof File) {
+                            reconstructedFiles.push(fileData);
                           }
-                        } else {
-                          // File is already a File object
-                          onViewFile(fileData);
                         }
-                      } else {
-                        // Fallback to creating a demo HTML file for mock documents
-                        const file = createDocumentFile(document);
-                        onViewFile(file);
+                        
+                        // Use multi-file viewer if available and has multiple files
+                        if (reconstructedFiles.length > 1 && onViewFiles) {
+                          onViewFiles(reconstructedFiles);
+                        } else if (reconstructedFiles.length > 0 && onViewFile) {
+                          onViewFile(reconstructedFiles[0]);
+                        }
+                      } catch (error) {
+                        console.error('Error reconstructing files:', error);
+                        toast({
+                          title: "Error",
+                          description: "Failed to load files",
+                          variant: "destructive"
+                        });
                       }
+                    } else if (onViewFile) {
+                      // Fallback to creating a demo HTML file for mock documents
+                      const file = createDocumentFile(document);
+                      onViewFile(file);
                     }
                   }}>
                     <Eye className="h-4 w-4 mr-2" />

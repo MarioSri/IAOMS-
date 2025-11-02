@@ -11,7 +11,9 @@ import {
   AlertCircle,
   Loader2,
   FileSpreadsheet,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -33,13 +35,15 @@ if (typeof window !== 'undefined') {
 
 interface FileViewerProps {
   file: File | null;
+  files?: File[]; // Support for multiple files
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 type FileType = 'pdf' | 'word' | 'excel' | 'image' | 'unsupported';
 
-export const FileViewer: React.FC<FileViewerProps> = ({ file, open, onOpenChange }) => {
+export const FileViewer: React.FC<FileViewerProps> = ({ file, files, open, onOpenChange }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [fileType, setFileType] = useState<FileType>('unsupported');
   const [content, setContent] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -48,11 +52,22 @@ export const FileViewer: React.FC<FileViewerProps> = ({ file, open, onOpenChange
   const [rotation, setRotation] = useState(0);
   const { toast } = useToast();
 
+  // Determine if we're in multi-file mode
+  const isMultiFile = files && files.length > 1;
+  const currentFile = isMultiFile ? files[currentIndex] : file;
+
+  // Reset current index when modal opens or files change
   useEffect(() => {
-    if (file && open) {
+    if (open) {
+      setCurrentIndex(0);
+    }
+  }, [open, files]);
+
+  useEffect(() => {
+    if (currentFile && open) {
       // Add a small delay to ensure modal and canvas are fully mounted
       const timer = setTimeout(() => {
-        loadFile(file);
+        loadFile(currentFile);
       }, 100); // 100ms delay for DOM to be ready
       
       return () => clearTimeout(timer);
@@ -64,7 +79,23 @@ export const FileViewer: React.FC<FileViewerProps> = ({ file, open, onOpenChange
       setZoom(100);
       setRotation(0);
     };
-  }, [file, open]);
+  }, [currentFile, open]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (!open || !isMultiFile) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        handlePrevious();
+      } else if (e.key === 'ArrowRight') {
+        handleNext();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, isMultiFile, currentIndex]);
 
   const getFileType = (file: File): FileType => {
     const extension = file.name.split('.').pop()?.toLowerCase();
@@ -236,6 +267,23 @@ export const FileViewer: React.FC<FileViewerProps> = ({ file, open, onOpenChange
     setRotation(prev => (prev + 90) % 360);
   };
 
+  // Multi-file navigation handlers
+  const handlePrevious = () => {
+    if (isMultiFile && currentIndex > 0) {
+      setCurrentIndex(prev => prev - 1);
+      setZoom(100);
+      setRotation(0);
+    }
+  };
+
+  const handleNext = () => {
+    if (isMultiFile && files && currentIndex < files.length - 1) {
+      setCurrentIndex(prev => prev + 1);
+      setZoom(100);
+      setRotation(0);
+    }
+  };
+
   const renderContent = () => {
     if (loading) {
       return (
@@ -395,15 +443,47 @@ export const FileViewer: React.FC<FileViewerProps> = ({ file, open, onOpenChange
             <div className="flex items-center gap-3">
               {getFileIcon()}
               <div>
-                <DialogTitle className="text-lg">{file?.name || 'File Viewer'}</DialogTitle>
-                {file && (
+                <DialogTitle className="text-lg">
+                  {currentFile?.name || 'File Viewer'}
+                  {isMultiFile && (
+                    <Badge variant="secondary" className="ml-2 text-xs">
+                      {currentIndex + 1} of {files?.length}
+                    </Badge>
+                  )}
+                </DialogTitle>
+                {currentFile && (
                   <p className="text-sm text-muted-foreground">
-                    {(file.size / 1024 / 1024).toFixed(2)} MB • {fileType.toUpperCase()}
+                    {(currentFile.size / 1024 / 1024).toFixed(2)} MB • {fileType.toUpperCase()}
                   </p>
                 )}
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {/* Multi-file Navigation */}
+              {isMultiFile && (
+                <>
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    onClick={handlePrevious}
+                    disabled={currentIndex === 0}
+                    title="Previous file (←)"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    onClick={handleNext}
+                    disabled={!files || currentIndex === files.length - 1}
+                    title="Next file (→)"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <div className="h-6 w-px bg-border mx-1" />
+                </>
+              )}
+              
               {/* Zoom Controls */}
               {['pdf', 'word', 'excel', 'image'].includes(fileType) && (
                 <>

@@ -29,6 +29,7 @@ const Approvals = () => {
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
   const [viewingDocument, setViewingDocument] = useState<any>(null);
   const [viewingFile, setViewingFile] = useState<File | null>(null);
+  const [viewingFiles, setViewingFiles] = useState<File[]>([]);
   
   useEffect(() => {
     const savedInputs = JSON.parse(localStorage.getItem('comment-inputs') || '{}');
@@ -277,10 +278,54 @@ const Approvals = () => {
 
 
   // Handle view document with FileViewer
-  const handleViewDocument = (doc: any) => {
-    const file = createDocumentFile(doc);
+  const handleViewDocument = async (doc: any) => {
+    // Check if document has multiple uploaded files
+    if (doc.files && doc.files.length > 0) {
+      try {
+        // Reconstruct all files from base64
+        const reconstructedFiles: File[] = [];
+        
+        for (const file of doc.files) {
+          const fileName = file.name || 'Unknown File';
+          const fileType = file.type || 'application/octet-stream';
+          const fileData = file.data || file;
+          
+          // If file has base64 data, reconstruct File object
+          if (typeof fileData === 'string' && fileData.startsWith('data:')) {
+            const response = await fetch(fileData);
+            const blob = await response.blob();
+            const reconstructedFile = new File([blob], fileName, { type: fileType });
+            reconstructedFiles.push(reconstructedFile);
+          } else if (fileData instanceof File) {
+            reconstructedFiles.push(fileData);
+          }
+        }
+        
+        // Use multi-file viewer if has multiple files
+        if (reconstructedFiles.length > 1) {
+          setViewingFiles(reconstructedFiles);
+          setViewingFile(null);
+        } else if (reconstructedFiles.length === 1) {
+          setViewingFile(reconstructedFiles[0]);
+          setViewingFiles([]);
+        }
+      } catch (error) {
+        console.error('Error reconstructing files:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load files",
+          variant: "destructive"
+        });
+        return;
+      }
+    } else {
+      // Fallback to creating a demo HTML file
+      const file = createDocumentFile(doc);
+      setViewingFile(file);
+      setViewingFiles([]);
+    }
+    
     setViewingDocument(doc);
-    setViewingFile(file);
     setShowDocumentViewer(true);
   };
 
@@ -489,6 +534,7 @@ const Approvals = () => {
   const isUserInRecipients = (doc: any): boolean => {
     // If no recipients specified, show to everyone (for backward compatibility)
     if (!doc.recipients || doc.recipients.length === 0) {
+      console.log('✅ No recipients filter - showing card:', doc.title);
       return true;
     }
     
@@ -496,7 +542,7 @@ const Approvals = () => {
     const currentUserName = user?.fullName || user?.name || '';
     const currentUserRole = user?.role || '';
     
-    return doc.recipients.some((recipient: string) => {
+    const isMatch = doc.recipients.some((recipient: string) => {
       // Match by full name
       if (recipient.toLowerCase() === currentUserName.toLowerCase()) {
         return true;
@@ -519,6 +565,9 @@ const Approvals = () => {
       
       return false;
     });
+    
+    console.log(`🔍 Card "${doc.title}" - User: ${currentUserName}/${currentUserRole} - Recipients:`, doc.recipients, '- Match:', isMatch);
+    return isMatch;
   };
 
   useEffect(() => {
@@ -566,6 +615,9 @@ const Approvals = () => {
     // Listen for new approval cards from Emergency Management
     const handleApprovalCardCreated = (event: any) => {
       const { approval } = event.detail;
+      console.log('📋 New approval card received:', approval);
+      console.log('👤 Current user:', user?.name, '| Role:', user?.role);
+      console.log('👥 Card recipients:', approval.recipients);
       setPendingApprovals(prev => [approval, ...prev]);
     };
     
@@ -1917,12 +1969,14 @@ const Approvals = () => {
               role: user?.role || 'Employee'
             }}
             file={viewingFile || undefined}
+            files={viewingFiles.length > 0 ? viewingFiles : undefined}
           />
         )}
 
         {/* FileViewer Modal */}
         <FileViewer
           file={viewingFile}
+          files={viewingFiles.length > 0 ? viewingFiles : undefined}
           open={showDocumentViewer}
           onOpenChange={setShowDocumentViewer}
         />
