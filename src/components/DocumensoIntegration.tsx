@@ -955,7 +955,7 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
                           {placedSignatures.map((signature) => (
                             <div
                               key={signature.id}
-                              className={`absolute cursor-move select-none ${selectedSignatureId === signature.id ? 'ring-4 ring-blue-500' : 'ring-2 ring-gray-300'}`}
+                              className={`absolute cursor-move select-none ${selectedSignatureId === signature.id ? 'ring-2 ring-blue-500/50' : ''}`}
                               style={{
                                 left: `${signature.x}px`,
                                 top: `${signature.y}px`,
@@ -971,7 +971,8 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
                               <img
                                 src={signature.data}
                                 alt="Signature"
-                                className="w-full h-full object-contain bg-white/90 backdrop-blur-sm rounded border-2 border-gray-200"
+                                className="w-full h-full object-contain"
+                                style={{ background: 'transparent' }}
                                 draggable={false}
                                 onError={(e) => console.error('Image failed to load:', signature.id)}
                                 onLoad={() => console.log('Image loaded successfully:', signature.id)}
