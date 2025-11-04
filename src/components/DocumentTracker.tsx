@@ -54,9 +54,11 @@ interface Document {
     progress: number;
     steps: Array<{
       name: string;
-      status: 'completed' | 'current' | 'pending';
+      status: 'completed' | 'current' | 'pending' | 'rejected' | 'cancelled';
       assignee: string;
       completedDate?: string;
+      rejectedBy?: string;
+      rejectedDate?: string;
     }>;
   };
   requiresSignature: boolean;
@@ -796,10 +798,17 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
                     {document.workflow.steps.map((step, index) => (
                       <div key={index} className="flex items-center gap-2 text-sm">
+                        {/* Show red X for rejected steps */}
+                        {step.status === 'rejected' && <XCircle className="h-4 w-4 text-red-600" />}
+                        {/* Show gray circle-slash for cancelled steps */}
+                        {step.status === 'cancelled' && <div className="h-4 w-4 rounded-full border-2 border-gray-400 flex items-center justify-center"><span className="text-gray-400 text-xs">✕</span></div>}
+                        {/* Demo cards specific icons */}
                         {step.status === 'completed' && document.id === 'DOC-003' && step.name === 'Principal Review' && <XCircle className="h-4 w-4 text-red-600" />}
                         {step.status === 'completed' && document.id === 'DOC-002' && step.name === 'Academic Committee' && <XCircle className="h-4 w-4 text-red-600" />}
                         {step.status === 'completed' && document.id === 'DOC-002' && step.name === 'Department Review' && <CircleCheckBig className="h-4 w-4 text-green-600" />}
+                        {/* Regular completed steps */}
                         {step.status === 'completed' && !(document.id === 'DOC-003' && step.name === 'Principal Review') && !(document.id === 'DOC-002' && step.name === 'Academic Committee') && !(document.id === 'DOC-002' && step.name === 'Department Review') && <CheckCircle className="h-4 w-4 text-green-600" />}
+                        {/* Current and pending steps */}
                         {step.status === 'current' && <Clock className="h-4 w-4 text-blue-600" />}
                         {step.status === 'pending' && <div className="h-4 w-4 rounded-full border border-gray-300" />}
                         <div className="flex-1">

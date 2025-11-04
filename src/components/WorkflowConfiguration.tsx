@@ -873,41 +873,39 @@ export const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ cl
         <TabsContent value="designer" className="space-y-6">
             {(isEditing || hideWorkflowsTab) ? (
               /* Workflow Editor */
-              <Card>
-                <CardContent className="pt-6 space-y-4">
-                  <div>
-                    <div>
-                      <label className="text-sm font-medium">Routing Type</label>
-                      <Select value={workflowType} onValueChange={(value: 'sequential' | 'parallel' | 'reverse' | 'bidirectional') => setWorkflowType(value as any)}>
-                        <SelectTrigger className="mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="sequential">Sequential Routing</SelectItem>
-                          <SelectItem value="parallel">Parallel Routing</SelectItem>
-                          <SelectItem value="reverse">Reverse Routing</SelectItem>
-                          <SelectItem value="bidirectional">Bi-Directional Routing</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  
+              <div className="space-y-4">
                   {/* Submit Document Features */}
-                  <div className="border rounded-lg p-4 bg-muted/20 space-y-4">
+                  <div className="space-y-4">
                     <div className="flex items-center gap-2 mb-3">
                       <Upload className="w-5 h-5 text-primary" />
                       <label className="text-base font-medium">Submit Document</label>
                     </div>
 
-                    {/* Document Title */}
-                    <div>
-                      <label className="text-sm font-medium">Document Title</label>
-                      <Input
-                        value={documentTitle}
-                        onChange={(e) => setDocumentTitle(e.target.value)}
-                        placeholder="Enter document title..."
-                        className="mt-1"
-                      />
+                    {/* Document Title and Routing Type side by side */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium">Document Title</label>
+                        <Input
+                          value={documentTitle}
+                          onChange={(e) => setDocumentTitle(e.target.value)}
+                          placeholder="Enter document title..."
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Routing Type</label>
+                        <Select value={workflowType} onValueChange={(value: 'sequential' | 'parallel' | 'reverse' | 'bidirectional') => setWorkflowType(value as any)}>
+                          <SelectTrigger className="mt-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="sequential">Sequential Routing</SelectItem>
+                            <SelectItem value="parallel">Parallel Routing</SelectItem>
+                            <SelectItem value="reverse">Reverse Routing</SelectItem>
+                            <SelectItem value="bidirectional">Bi-Directional Routing</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
 
                     {/* Document Type Selection */}
@@ -1019,6 +1017,51 @@ export const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ cl
                       </div>
                     )}
 
+                    {/* Auto-Escalation */}
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          checked={autoEscalation}
+                          onCheckedChange={setAutoEscalation}
+                        />
+                        <label className="text-sm font-medium">Auto-Escalation</label>
+                      </div>
+                      
+                      {autoEscalation && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-sm font-medium">Escalation Timeout</label>
+                            <Input
+                              type="number"
+                              value={escalationTimeout}
+                              onChange={(e) => setEscalationTimeout(Number(e.target.value))}
+                              min={1}
+                              className="mt-1"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">Time Unit</label>
+                            <Select
+                              value={escalationTimeUnit}
+                              onValueChange={(value: any) => setEscalationTimeUnit(value)}
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="seconds">Seconds</SelectItem>
+                                <SelectItem value="minutes">Minutes</SelectItem>
+                                <SelectItem value="hours">Hours</SelectItem>
+                                <SelectItem value="days">Days</SelectItem>
+                                <SelectItem value="weeks">Weeks</SelectItem>
+                                <SelectItem value="months">Months</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Recipients */}
                     <div>
                       <label className="text-sm font-medium">Approval Chain with Bypass Recipients</label>
@@ -1078,79 +1121,37 @@ export const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ cl
                         className="mt-1"
                       />
                     </div>
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      checked={autoEscalation}
-                      onCheckedChange={setAutoEscalation}
-                    />
-                    <label className="text-sm font-medium">Auto-Escalation</label>
-                  </div>
-                  
-                  {autoEscalation && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-sm font-medium">Escalation Timeout</label>
-                        <Input
-                          type="number"
-                          value={escalationTimeout}
-                          onChange={(e) => setEscalationTimeout(Number(e.target.value))}
-                          min={1}
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium">Time Unit</label>
-                        <Select
-                          value={escalationTimeUnit}
-                          onValueChange={(value: any) => setEscalationTimeUnit(value)}
-                        >
-                          <SelectTrigger className="mt-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="seconds">Seconds</SelectItem>
-                            <SelectItem value="minutes">Minutes</SelectItem>
-                            <SelectItem value="hours">Hours</SelectItem>
-                            <SelectItem value="days">Days</SelectItem>
-                            <SelectItem value="weeks">Weeks</SelectItem>
-                            <SelectItem value="months">Months</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex justify-end gap-2 pt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIsEditing(false);
+                          setIsCreating(false);
+                          if (selectedWorkflow) {
+                            loadWorkflow(selectedWorkflow);
+                          } else {
+                            resetForms();
+                          }
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={async () => {
+                          // Submit directly without opening watermark modal
+                          await handleSaveWorkflow();
+                        }}
+                        variant="default"
+                        className="font-bold animate-pulse bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        SUBMIT BYPASS
+                      </Button>
                     </div>
-                  )}
-                  
-                  <div className="flex justify-end gap-2 pt-4">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setIsEditing(false);
-                        setIsCreating(false);
-                        if (selectedWorkflow) {
-                          loadWorkflow(selectedWorkflow);
-                        } else {
-                          resetForms();
-                        }
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={async () => {
-                        // Submit directly without opening watermark modal
-                        await handleSaveWorkflow();
-                      }}
-                      variant="default"
-                      className="font-bold animate-pulse bg-green-600 hover:bg-green-700 text-white"
-                    >
-                      <Send className="w-4 h-4 mr-2" />
-                      SUBMIT BYPASS
-                    </Button>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
             ) : (
               /* Workflow Display */
               selectedWorkflow && (

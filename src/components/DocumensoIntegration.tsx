@@ -418,11 +418,6 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
       for (const step of steps) {
         await new Promise(resolve => setTimeout(resolve, 800));
         setSigningProgress(step.progress);
-        
-        toast({
-          title: "Documenso Signing",
-          description: step.message,
-        });
       }
 
       // Merge signatures with document
@@ -1166,7 +1161,7 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-blue-600" />
-            Documenso Digital Signature Platform
+            Digital Signature Platform
           </DialogTitle>
         </DialogHeader>
         
@@ -1907,16 +1902,6 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
                   </div>
                 </div>
                 
-                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-yellow-600" />
-                    <span className="text-sm font-medium text-yellow-800">Security Notice</span>
-                  </div>
-                  <p className="text-xs text-yellow-700 mt-1">
-                    This signature will be legally binding and timestamped with blockchain verification.
-                  </p>
-                </div>
-                
                 {isProcessing ? (
                   <div className="space-y-4 text-center">
                     <div className="w-16 h-16 mx-auto bg-blue-100 rounded-full flex items-center justify-center">
@@ -1938,11 +1923,7 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
                     <div className="flex gap-2 justify-center">
                       <Button variant="outline" size="sm">
                         <Download className="w-4 h-4 mr-2" />
-                        Download Certificate
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <Eye className="w-4 h-4 mr-2" />
-                        View Audit Trail
+                        Download
                       </Button>
                     </div>
                   </div>

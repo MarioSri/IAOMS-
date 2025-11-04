@@ -3,6 +3,7 @@ import { DocumentUploader } from "@/components/DocumentUploader";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { ExternalNotificationDispatcher } from "@/services/ExternalNotificationDispatcher";
 
 const Documents = () => {
   const { user, logout } = useAuth();
@@ -192,45 +193,104 @@ const Documents = () => {
     existingCards.unshift(trackingCard);
     localStorage.setItem('submitted-documents', JSON.stringify(existingCards));
     
-    // Create approval card for Approval Center
-    console.log('📄 Creating Document Management Approval Card');
+    // Create approval card(s) for Approval Center
+    console.log('📄 Creating Document Management Approval Card(s)');
     console.log('  📋 Selected recipient IDs:', data.recipients);
+    console.log('  📎 Document assignments:', data.assignments);
     
-    // Convert recipient IDs to names for display, but keep original IDs for matching
-    const recipientNames = data.recipients.map((id: string) => {
-      const name = getRecipientName(id);
-      console.log(`  🔄 Converting: ${id} → ${name}`);
-      return name;
-    });
-    
-    const approvalCard = {
-      id: trackingCard.id,
-      title: data.title,
-      type: data.documentTypes[0]?.charAt(0).toUpperCase() + data.documentTypes[0]?.slice(1) || 'Document',
-      submitter: currentUserName,
-      submittedDate: new Date().toISOString().split('T')[0],
-      status: 'pending',
-      priority: data.priority,
-      description: data.description,
-      recipients: recipientNames, // Display names for UI
-      recipientIds: data.recipients, // Original IDs for matching
-      files: serializedFiles
-    };
-
-    console.log('✅ Approval card created:', {
-      id: approvalCard.id,
-      title: approvalCard.title,
-      recipients: approvalCard.recipients,
-      recipientIds: approvalCard.recipientIds,
-      recipientCount: approvalCard.recipients.length
-    });
-    
-    // Save to localStorage for approvals
     const existingApprovals = JSON.parse(localStorage.getItem('pending-approvals') || '[]');
-    existingApprovals.unshift(approvalCard);
+    const approvalCards: any[] = [];
+    
+    // Check if custom assignments exist and are not empty
+    const hasCustomAssignments = data.assignments && Object.keys(data.assignments).length > 0;
+    
+    if (hasCustomAssignments) {
+      // ENFORCE CUSTOM ASSIGNMENTS: Create separate approval cards per file
+      console.log('✨ Custom assignments detected - creating file-specific approval cards');
+      
+      // Group files by their assigned recipients
+      const filesByRecipients: { [key: string]: any[] } = {};
+      
+      serializedFiles.forEach((file: any) => {
+        const assignedRecipients = data.assignments[file.name] || data.recipients;
+        const recipientKey = assignedRecipients.sort().join(',');
+        
+        if (!filesByRecipients[recipientKey]) {
+          filesByRecipients[recipientKey] = [];
+        }
+        filesByRecipients[recipientKey].push(file);
+      });
+      
+      // Create one approval card per unique recipient combination
+      Object.entries(filesByRecipients).forEach(([recipientKey, files]) => {
+        const assignedRecipientIds = recipientKey.split(',');
+        const recipientNames = assignedRecipientIds.map((id: string) => getRecipientName(id));
+        
+        const approvalCard = {
+          id: `${trackingCard.id}-${assignedRecipientIds.join('-')}`,
+          title: files.length === serializedFiles.length ? data.title : `${data.title} (${files.map((f: any) => f.name).join(', ')})`,
+          type: data.documentTypes[0]?.charAt(0).toUpperCase() + data.documentTypes[0]?.slice(1) || 'Document',
+          submitter: currentUserName,
+          submittedDate: new Date().toISOString().split('T')[0],
+          status: 'pending',
+          priority: data.priority,
+          description: data.description,
+          recipients: recipientNames,
+          recipientIds: assignedRecipientIds,
+          files: files, // Only assigned files
+          trackingCardId: trackingCard.id, // Link to tracking card for sequential flow
+          parentDocId: trackingCard.id,
+          isCustomAssignment: true
+        };
+        
+        approvalCards.push(approvalCard);
+        existingApprovals.unshift(approvalCard);
+        
+        console.log(`✅ Approval card created for recipients: ${recipientNames.join(', ')}`);
+        console.log(`   📎 Files: ${files.map((f: any) => f.name).join(', ')}`);
+      });
+    } else {
+      // DEFAULT: All files go to all recipients (backward compatibility)
+      console.log('📋 No custom assignments - creating single approval card for all recipients');
+      
+      const recipientNames = data.recipients.map((id: string) => {
+        const name = getRecipientName(id);
+        console.log(`  🔄 Converting: ${id} → ${name}`);
+        return name;
+      });
+      
+      const approvalCard = {
+        id: trackingCard.id,
+        title: data.title,
+        type: data.documentTypes[0]?.charAt(0).toUpperCase() + data.documentTypes[0]?.slice(1) || 'Document',
+        submitter: currentUserName,
+        submittedDate: new Date().toISOString().split('T')[0],
+        status: 'pending',
+        priority: data.priority,
+        description: data.description,
+        recipients: recipientNames,
+        recipientIds: data.recipients,
+        files: serializedFiles,
+        trackingCardId: trackingCard.id, // Link to tracking card for sequential flow
+        isCustomAssignment: false
+      };
+      
+      approvalCards.push(approvalCard);
+      existingApprovals.unshift(approvalCard);
+      
+      console.log('✅ Approval card created:', {
+        id: approvalCard.id,
+        title: approvalCard.title,
+        recipients: approvalCard.recipients,
+        recipientIds: approvalCard.recipientIds,
+        recipientCount: approvalCard.recipients.length
+      });
+    }
+    
+    // Save all approval cards to localStorage
     localStorage.setItem('pending-approvals', JSON.stringify(existingApprovals));
     
-    console.log('✅ Approval card saved to localStorage. Total cards:', existingApprovals.length);
+    console.log(`✅ ${approvalCards.length} Approval card(s) saved to localStorage. Total cards:`, existingApprovals.length);
     
     // Dispatch events for real-time updates
     console.log('📢 Dispatching document-approval-created event for tracking');
@@ -238,14 +298,17 @@ const Documents = () => {
       detail: { document: trackingCard }
     }));
     
-    console.log('📢 Dispatching approval-card-created event for approvals');
-    window.dispatchEvent(new CustomEvent('approval-card-created', {
-      detail: { approval: approvalCard }
-    }));
+    // Dispatch event for each approval card created
+    approvalCards.forEach((card) => {
+      console.log('📢 Dispatching approval-card-created event for:', card.id);
+      window.dispatchEvent(new CustomEvent('approval-card-created', {
+        detail: { approval: card }
+      }));
+    });
     
     // Additional event for immediate UI updates
     window.dispatchEvent(new CustomEvent('document-submitted', {
-      detail: { trackingCard, approvalCard }
+      detail: { trackingCard, approvalCards }
     }));
     
     // Force storage event for cross-tab updates
@@ -261,10 +324,49 @@ const Documents = () => {
     
     console.log('✅ Document Management submission complete:', {
       trackingCardId: trackingCard.id,
-      approvalCardId: approvalCard.id,
+      approvalCardsCreated: approvalCards.length,
+      approvalCardIds: approvalCards.map(c => c.id),
       recipientCount: data.recipients.length,
       eventsDispatched: ['document-approval-created', 'approval-card-created', 'document-submitted']
     });
+    
+    // Send notifications to recipients based on their preferences
+    console.log('📬 Sending notifications to recipients...');
+    const allRecipientIds = [...new Set(approvalCards.flatMap(card => card.recipientIds))];
+    const notificationResults: { [key: string]: { success: boolean; channels: string[] } } = {};
+    
+    for (const recipientId of allRecipientIds) {
+      const recipientName = getRecipientName(recipientId);
+      
+      try {
+        const result = await ExternalNotificationDispatcher.notifyRecipient(
+          recipientId,
+          recipientName,
+          {
+            type: 'approval',
+            documentTitle: data.title,
+            submitter: currentUserName,
+            priority: data.priority,
+            approvalCenterLink: `${window.location.origin}/approvals`,
+            recipientName: recipientName
+          }
+        );
+        
+        notificationResults[recipientId] = result;
+        
+        if (result.success) {
+          console.log(`✅ Notified ${recipientName} via: ${result.channels.join(', ')}`);
+        } else {
+          console.log(`⚠️ No notifications sent to ${recipientName} (preferences disabled or not found)`);
+        }
+      } catch (error) {
+        console.error(`❌ Error notifying ${recipientName}:`, error);
+        notificationResults[recipientId] = { success: false, channels: [] };
+      }
+    }
+    
+    const totalNotified = Object.values(notificationResults).filter(r => r.success).length;
+    console.log(`📬 Notification Summary: ${totalNotified} of ${allRecipientIds.length} recipients notified`);
     
     // Create channel for document collaboration
     const channelName = `${data.title.substring(0, 30)}${data.title.length > 30 ? '...' : ''}`;

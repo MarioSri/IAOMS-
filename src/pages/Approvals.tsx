@@ -13,6 +13,7 @@ import { DocumensoIntegration } from "@/components/DocumensoIntegration";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { ExternalNotificationDispatcher } from "@/services/ExternalNotificationDispatcher";
 import isJpg from 'is-jpg';
 
 const Approvals = () => {
@@ -627,13 +628,49 @@ const Approvals = () => {
       
       localStorage.setItem('submitted-documents', JSON.stringify(updatedDocs));
       
+      // Notify next recipient if workflow is not complete
+      const updatedDoc = updatedDocs.find((d: any) => d.id === docId);
+      if (updatedDoc && updatedDoc.status !== 'approved') {
+        const currentStepIndex = updatedDoc.workflow.steps.findIndex((s: any) => s.status === 'current');
+        if (currentStepIndex !== -1) {
+          const nextStep = updatedDoc.workflow.steps[currentStepIndex];
+          const nextRecipientName = nextStep.assignee;
+          
+          // Find recipient ID from recipientIds array
+          const nextRecipientId = doc.recipientIds?.[currentStepIndex - 1]; // -1 because first step is submission
+          
+          if (nextRecipientId && nextRecipientName) {
+            console.log(`📬 Notifying next recipient: ${nextRecipientName} (${nextRecipientId})`);
+            
+            ExternalNotificationDispatcher.notifyRecipient(
+              nextRecipientId,
+              nextRecipientName,
+              {
+                type: 'update',
+                documentTitle: doc.title,
+                submitter: doc.submitter || 'Previous Approver',
+                priority: doc.priority,
+                approvalCenterLink: `${window.location.origin}/approvals`,
+                recipientName: nextRecipientName
+              }
+            ).then((result) => {
+              if (result.success) {
+                console.log(`✅ Next recipient notified via: ${result.channels.join(', ')}`);
+              }
+            }).catch((error) => {
+              console.error('❌ Error notifying next recipient:', error);
+            });
+          }
+        }
+      }
+      
       // Trigger real-time update for Track Documents
       window.dispatchEvent(new CustomEvent('workflow-updated'));
       
       const approvedDoc = {
         ...doc,
         status: 'approved',
-        approvedBy: user?.fullName || user?.name || 'Principal',
+        approvedBy: user?.name || 'Principal',
         approvedDate: new Date().toISOString().split('T')[0],
         comment: comments[docId]?.join(' ') || 'Document approved successfully.'
       };
@@ -671,13 +708,37 @@ const Approvals = () => {
       const submittedDocs = JSON.parse(localStorage.getItem('submitted-documents') || '[]');
       const updatedDocs = submittedDocs.map((trackDoc: any) => {
         if (trackDoc.id === docId) {
+          // Find current step to mark as rejected and cancel pending steps
+          const currentStepIndex = trackDoc.workflow.steps.findIndex(
+            (step: any) => step.status === 'current'
+          );
+          
+          const updatedSteps = trackDoc.workflow.steps.map((step: any, index: number) => {
+            if (index === currentStepIndex) {
+              // Mark the current step as rejected
+              return { 
+                ...step, 
+                status: 'rejected',
+                rejectedBy: user?.fullName || user?.name || 'Approver',
+                rejectedDate: new Date().toISOString().split('T')[0]
+              };
+            } else if (step.status === 'pending') {
+              // Mark all pending steps as cancelled
+              return { ...step, status: 'cancelled' };
+            }
+            return step;
+          });
+          
           return {
             ...trackDoc,
             status: 'rejected',
+            rejectedBy: user?.fullName || user?.name || 'Approver',
+            rejectedDate: new Date().toISOString().split('T')[0],
             workflow: {
               ...trackDoc.workflow,
               currentStep: 'Rejected',
-              progress: 0
+              progress: trackDoc.workflow.progress, // Preserve current progress
+              steps: updatedSteps
             }
           };
         }
@@ -686,8 +747,28 @@ const Approvals = () => {
       
       localStorage.setItem('submitted-documents', JSON.stringify(updatedDocs));
       
+      // Update pending-approvals localStorage to remove for ALL users
+      const pendingApprovals = JSON.parse(localStorage.getItem('pending-approvals') || '[]');
+      const updatedPendingApprovals = pendingApprovals.filter((approval: any) => approval.id !== docId);
+      localStorage.setItem('pending-approvals', JSON.stringify(updatedPendingApprovals));
+      
       // Trigger real-time update for Track Documents
       window.dispatchEvent(new CustomEvent('workflow-updated'));
+      
+      // Broadcast rejection event to remove from all recipients' views
+      window.dispatchEvent(new CustomEvent('document-rejected', {
+        detail: { 
+          docId, 
+          rejectedBy: user?.fullName || user?.name || 'Approver',
+          rejectedDate: new Date().toISOString().split('T')[0]
+        }
+      }));
+      
+      // Force storage event for cross-tab updates
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'pending-approvals',
+        newValue: JSON.stringify(updatedPendingApprovals)
+      }));
       
       const rejectedDoc = {
         ...doc,
@@ -701,7 +782,7 @@ const Approvals = () => {
       // Add to approval history
       setApprovalHistory(prev => [rejectedDoc, ...prev]);
       
-      // Remove from pending approvals
+      // Remove from pending approvals state
       setPendingApprovals(prev => prev.filter(d => d.id !== docId));
       
       toast({
@@ -1056,14 +1137,29 @@ const Approvals = () => {
       });
     };
     
+    // Listen for document rejections to remove from all recipients
+    const handleDocumentRejected = (event: any) => {
+      const { docId, rejectedBy } = event.detail;
+      console.log('❌ Document rejected:', docId, 'by', rejectedBy);
+      setPendingApprovals(prev => prev.filter(doc => doc.id !== docId));
+      
+      toast({
+        title: "Document Rejected",
+        description: `Document was rejected by ${rejectedBy}. Removed from your pending approvals.`,
+        variant: "destructive"
+      });
+    };
+    
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('document-removed', handleDocumentRemoval);
     window.addEventListener('approval-card-created', handleApprovalCardCreated);
+    window.addEventListener('document-rejected', handleDocumentRejected);
     
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('document-removed', handleDocumentRemoval);
       window.removeEventListener('approval-card-created', handleApprovalCardCreated);
+      window.removeEventListener('document-rejected', handleDocumentRejected);
     };
   }, []);
   
@@ -1275,14 +1371,61 @@ const Approvals = () => {
                 <div className="space-y-4">
                   {/* Dynamic Submitted Documents */}
                   {pendingApprovals.filter(doc => {
-                    const shouldShow = isUserInRecipients(doc);
-                    console.log(`📄 Document Management card "${doc.title}" - Should show: ${shouldShow}`);
+                    // First check: Is user in recipients?
+                    const isInRecipients = isUserInRecipients(doc);
+                    console.log(`📄 Document Management card "${doc.title}" - Is in recipients: ${isInRecipients}`);
+                    
+                    if (!isInRecipients) {
+                      console.log('  ❌ User not in recipients, hiding card');
+                      return false;
+                    }
+                    
+                    // Second check: For sequential workflow, is it user's turn?
+                    // Only applicable for Document Management cards with tracking
+                    if (doc.trackingCardId) {
+                      const trackingCards = JSON.parse(localStorage.getItem('submitted-documents') || '[]');
+                      const trackingCard = trackingCards.find((tc: any) => tc.id === doc.trackingCardId);
+                      
+                      if (trackingCard?.workflow?.steps) {
+                        const currentUserRole = user?.role?.toLowerCase() || '';
+                        
+                        // Find user's step in workflow
+                        const userStepIndex = trackingCard.workflow.steps.findIndex((step: any) => {
+                          const assigneeLower = step.assignee.toLowerCase();
+                          return (
+                            assigneeLower.includes(currentUserRole) ||
+                            (user?.department && assigneeLower.includes(user.department.toLowerCase())) ||
+                            (user?.branch && assigneeLower.includes(user.branch.toLowerCase()))
+                          );
+                        });
+                        
+                        if (userStepIndex !== -1) {
+                          const userStep = trackingCard.workflow.steps[userStepIndex];
+                          const shouldShow = userStep.status === 'current';
+                          
+                          console.log(`  🔄 Sequential workflow check:`, {
+                            userRole: currentUserRole,
+                            userStepIndex,
+                            userStepStatus: userStep.status,
+                            shouldShow
+                          });
+                          
+                          return shouldShow;
+                        } else {
+                          console.log(`  ⚠️ User not found in workflow steps, showing card by default`);
+                          return true;
+                        }
+                      }
+                    }
+                    
+                    // For non-tracking cards or legacy cards, show if user is in recipients
+                    console.log('  ✅ Non-sequential card or no tracking, showing card');
                     if (doc.recipientIds) {
                       console.log('  🆔 Using recipient IDs for filtering:', doc.recipientIds);
                     } else {
                       console.log('  🆔 Using display names for filtering:', doc.recipients);
                     }
-                    return shouldShow;
+                    return true;
                   }).map((doc) => (
                     <Card key={doc.id} className={`hover:shadow-md transition-shadow ${doc.isEmergency ? 'border-destructive bg-red-50 animate-pulse' : ''}`}>
                       <CardContent className="p-6">
@@ -1532,7 +1675,7 @@ const Approvals = () => {
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <Share2 className="h-4 w-4 text-blue-600" />
-                                <span className="text-sm font-medium text-blue-700">Comments Shared by Previous Recipient</span>
+                                <span className="text-sm font-medium text-blue-700">Comment Shared by Previous Approver</span>
                               </div>
                               <div className="space-y-2">
                                 {sharedComments['faculty-meeting'].filter(s => shouldSeeSharedComment(s.sharedFor)).map((shared, index) => (
@@ -1769,7 +1912,7 @@ const Approvals = () => {
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <Share2 className="h-4 w-4 text-blue-600" />
-                                <span className="text-sm font-medium text-blue-700">Comments Shared by Previous Recipient</span>
+                                <span className="text-sm font-medium text-blue-700">Comment Shared by Previous Approver</span>
                               </div>
                               <div className="space-y-2">
                                 {sharedComments['budget-request'].filter(s => shouldSeeSharedComment(s.sharedFor)).map((shared, index) => (
@@ -2198,7 +2341,7 @@ const Approvals = () => {
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <Share2 className="h-4 w-4 text-blue-600" />
-                                <span className="text-sm font-medium text-blue-700">Comments Shared by Previous Recipient</span>
+                                <span className="text-sm font-medium text-blue-700">Comment Shared by Previous Approver</span>
                               </div>
                               <div className="space-y-2">
                                 {sharedComments['research-methodology'].filter(s => shouldSeeSharedComment(s.sharedFor)).map((shared, index) => (

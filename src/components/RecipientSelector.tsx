@@ -305,8 +305,8 @@ export const RecipientSelector: React.FC<RecipientSelectorProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    'hods': true,
-    'program-heads': true
+    'hods': false,
+    'program-heads': false
   });
   const [useHierarchicalOrder, setUseHierarchicalOrder] = useState(true);
 
