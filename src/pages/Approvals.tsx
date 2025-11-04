@@ -23,9 +23,9 @@ const Approvals = () => {
   const [selectedDocument, setSelectedDocument] = useState({ id: '', type: 'letter', title: '' });
   const [showDocumenso, setShowDocumenso] = useState(false);
   const [documensoDocument, setDocumensoDocument] = useState<any>(null);
-  const [comments, setComments] = useState<{[key: string]: string[]}>({});
+  const [comments, setComments] = useState<{[key: string]: Array<{author: string, date: string, message: string}>}>({});
   const [commentInputs, setCommentInputs] = useState<{[key: string]: string}>({});
-  const [sharedComments, setSharedComments] = useState<{[key: string]: Array<{comment: string, sharedBy: string, timestamp: string}>}>({});
+  const [sharedComments, setSharedComments] = useState<{[key: string]: Array<{comment: string, sharedBy: string, sharedFor: string, timestamp: string}>}>({});
   const [approvalHistory, setApprovalHistory] = useState<any[]>([]);
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
   const [viewingDocument, setViewingDocument] = useState<any>(null);
@@ -46,6 +46,7 @@ const Approvals = () => {
         {
           comment: 'Insufficient literature review and theoretical framework. References need to be updated to the latest 3 years.',
           sharedBy: 'Dr. Maria Garcia (HOD)',
+          sharedFor: 'all',  // Demo comment visible to all
           timestamp: new Date().toISOString()
         }
       ];
@@ -130,7 +131,7 @@ const Approvals = () => {
     const comment = commentInputs[cardId]?.trim();
     if (comment) {
       const newComment = {
-        author: user?.fullName || user?.name || 'Reviewer',
+        author: user?.name || 'Reviewer',
         date: new Date().toISOString().split('T')[0],
         message: comment
       };
@@ -140,9 +141,10 @@ const Approvals = () => {
       existingComments[cardId] = [...(existingComments[cardId] || []), newComment];
       localStorage.setItem('document-comments', JSON.stringify(existingComments));
       
+      // Save to approval-comments with author info (now consistent with document-comments)
       const newComments = {
         ...comments,
-        [cardId]: [...(comments[cardId] || []), comment]
+        [cardId]: [...(comments[cardId] || []), newComment]
       };
       setComments(newComments);
       
@@ -156,12 +158,19 @@ const Approvals = () => {
     }
   };
 
-  const handleShareComment = (cardId: string) => {
+  const handleShareComment = (cardId: string, doc?: any) => {
     const comment = commentInputs[cardId]?.trim();
     if (comment) {
+      // Determine the next recipient
+      let nextRecipient = 'all';
+      if (doc) {
+        nextRecipient = getNextRecipient(doc);
+      }
+      
       const sharedComment = {
         comment,
-        sharedBy: user?.fullName || user?.name || 'Previous Approver',
+        sharedBy: user?.name || 'Previous Approver',
+        sharedFor: nextRecipient,  // Who should see this shared comment
         timestamp: new Date().toISOString()
       };
       
@@ -177,7 +186,9 @@ const Approvals = () => {
       
       toast({
         title: "Comment Shared",
-        description: "Your comment will be visible to the next recipient(s) in the approval chain.",
+        description: nextRecipient === 'all' 
+          ? "Your comment will be visible to all recipients." 
+          : `Your comment will be visible to the next recipient: ${nextRecipient}`,
       });
     }
   };
@@ -224,9 +235,10 @@ const Approvals = () => {
   };
 
   const handleEditComment = (cardId: string, index: number) => {
-    const comment = comments[cardId]?.[index];
-    if (comment) {
-      const newInputs = { ...commentInputs, [cardId]: comment };
+    const commentObj = comments[cardId]?.[index];
+    if (commentObj) {
+      // Load the comment message back into the input field
+      const newInputs = { ...commentInputs, [cardId]: commentObj.message };
       setCommentInputs(newInputs);
       localStorage.setItem('comment-inputs', JSON.stringify(newInputs));
       handleUndoComment(cardId, index);
@@ -872,6 +884,110 @@ const Approvals = () => {
     return isMatch;
   };
 
+  // Helper function to check if current user should see a shared comment
+  const shouldSeeSharedComment = (sharedFor: string): boolean => {
+    if (!user) return false;
+    if (!sharedFor) return false;
+    
+    // If shared for 'all', everyone can see it
+    if (sharedFor === 'all') return true;
+    
+    const currentUserRole = (user.role || '').toLowerCase();
+    const currentUserName = (user.name || '').toLowerCase();
+    const sharedForLower = sharedFor.toLowerCase();
+    
+    // Return false if user info is incomplete
+    if (!currentUserRole && !currentUserName) return false;
+    
+    // Check if the sharedFor matches current user's role or name
+    const matches = (currentUserRole && sharedForLower.includes(currentUserRole)) || 
+                   (currentUserName && sharedForLower.includes(currentUserName)) ||
+                   (currentUserName && currentUserName.includes(sharedForLower)) ||
+                   (currentUserName && sharedForLower.replace(/\s+/g, '-').includes(currentUserName.replace(/\s+/g, '-')));
+    
+    console.log(`👁️ Shared comment visibility check: sharedFor="${sharedFor}", user="${user.name}", role="${user.role}", visible=${matches}`);
+    return matches;
+  };
+
+  // Helper function to get the next recipient in the approval chain
+  const getNextRecipient = (doc: any): string => {
+    if (!user) return 'all';
+
+    // Check if document has workflow structure
+    if (doc.workflow && doc.workflow.steps) {
+      const currentStepIndex = doc.workflow.steps.findIndex(
+        (step: any) => step.status === 'current'
+      );
+      
+      if (currentStepIndex !== -1 && currentStepIndex < doc.workflow.steps.length - 1) {
+        const nextStep = doc.workflow.steps[currentStepIndex + 1];
+        const nextRecipient = nextStep.name || nextStep.assignee || 'next-recipient';
+        console.log(`📤 Next recipient from workflow: ${nextRecipient}`);
+        return nextRecipient;
+      }
+    }
+    
+    // Fallback: Check recipientIds array if no workflow
+    if (doc.recipientIds && Array.isArray(doc.recipientIds)) {
+      const currentUserRole = (user.role || '').toLowerCase();
+      const currentUserName = (user.name || '').toLowerCase().replace(/\s+/g, '-');
+      
+      // Find current user's position in recipients array
+      const userIndex = doc.recipientIds.findIndex((recipientId: string) => {
+        const recipientLower = recipientId.toLowerCase();
+        return (currentUserRole && recipientLower.includes(currentUserRole)) || 
+               (currentUserName && recipientLower.includes(currentUserName));
+      });
+      
+      if (userIndex !== -1 && userIndex < doc.recipientIds.length - 1) {
+        const nextRecipientId = doc.recipientIds[userIndex + 1];
+        console.log(`📤 Next recipient from recipientIds: ${nextRecipientId}`);
+        return nextRecipientId;
+      }
+    }
+    
+    // Default to 'all' if next recipient cannot be determined
+    console.log(`⚠️ Cannot determine next recipient - sharing with all`);
+    return 'all';
+  };
+
+  // Helper function to check if current user is the last recipient in approval chain
+  const isLastRecipient = (doc: any): boolean => {
+    if (!user) return false;
+
+    // Check if document has workflow structure
+    if (doc.workflow && doc.workflow.steps) {
+      const currentStepIndex = doc.workflow.steps.findIndex(
+        (step: any) => step.status === 'current'
+      );
+      const isLastStep = currentStepIndex === doc.workflow.steps.length - 1;
+      console.log(`🔍 Workflow check for "${doc.title}": currentStep=${currentStepIndex}, lastStep=${doc.workflow.steps.length - 1}, isLast=${isLastStep}`);
+      return isLastStep;
+    }
+    
+    // Fallback: Check recipientIds array if no workflow
+    if (doc.recipientIds && Array.isArray(doc.recipientIds)) {
+      const currentUserRole = (user.role || '').toLowerCase();
+      const currentUserName = (user.name || '').toLowerCase().replace(/\s+/g, '-');
+      
+      // Find current user's position in recipients array
+      const userIndex = doc.recipientIds.findIndex((recipientId: string) => {
+        const recipientLower = recipientId.toLowerCase();
+        return recipientLower.includes(currentUserRole) || recipientLower.includes(currentUserName);
+      });
+      
+      if (userIndex !== -1) {
+        const isLast = userIndex === doc.recipientIds.length - 1;
+        console.log(`🔍 RecipientIds check for "${doc.title}": userIndex=${userIndex}, totalRecipients=${doc.recipientIds.length}, isLast=${isLast}`);
+        return isLast;
+      }
+    }
+    
+    // Default to false (show button) if structure is unclear
+    console.log(`⚠️ Cannot determine last recipient for "${doc.title}" - showing share button`);
+    return false;
+  };
+
   useEffect(() => {
     const loadPendingApprovals = () => {
       const stored = JSON.parse(localStorage.getItem('pending-approvals') || '[]');
@@ -1236,27 +1352,36 @@ const Approvals = () => {
                               </div>
                             )}
                             
-                            {comments[doc.id]?.length > 0 && (
+                            {comments[doc.id]?.filter(c => c.author === user?.name).length > 0 && (
                               <div className="space-y-2">
                                 <div className="flex items-center gap-1">
                                   <MessageSquare className="h-4 w-4" />
                                   <span className="text-sm font-medium">Your Comments</span>
                                 </div>
                                 <div className="space-y-2">
-                                  {comments[doc.id].map((comment, index) => (
+                                  {comments[doc.id].filter(c => c.author === user?.name).map((commentObj, index) => (
                                     <div key={index} className="bg-muted p-3 rounded-lg text-sm flex justify-between items-start">
-                                      <p className="flex-1">{comment}</p>
+                                      <div className="flex-1">
+                                        <p>{commentObj.message}</p>
+                                        <p className="text-xs text-muted-foreground mt-1">{commentObj.date}</p>
+                                      </div>
                                       <div className="flex gap-1 ml-2">
                                         <button 
                                           className="px-4 py-2 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                          onClick={() => handleEditComment(doc.id, index)}
+                                          onClick={() => {
+                                            const originalIndex = comments[doc.id].findIndex(c => c.message === commentObj.message && c.date === commentObj.date);
+                                            handleEditComment(doc.id, originalIndex);
+                                          }}
                                           title="Edit"
                                         >
                                           <SquarePen className="h-4 w-4 text-gray-600" />
                                         </button>
                                         <button 
                                           className="px-4 py-2 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                          onClick={() => handleUndoComment(doc.id, index)}
+                                          onClick={() => {
+                                            const originalIndex = comments[doc.id].findIndex(c => c.message === commentObj.message && c.date === commentObj.date);
+                                            handleUndoComment(doc.id, originalIndex);
+                                          }}
                                           title="Undo"
                                         >
                                           <Undo2 className="h-4 w-4 text-gray-600" />
@@ -1302,13 +1427,15 @@ const Approvals = () => {
                                   >
                                     <ChevronRight className="h-4 w-4 text-gray-600" />
                                   </button>
-                                  <button 
-                                    className="px-3 py-2 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition-colors"
-                                    title="Share comment with next recipient(s)"
-                                    onClick={() => handleShareComment(doc.id)}
-                                  >
-                                    <Share2 className="h-4 w-4 text-blue-600" />
-                                  </button>
+                                  {!isLastRecipient(doc) && (
+                                    <button 
+                                      className="px-3 py-2 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition-colors"
+                                      title="Share comment with next recipient(s)"
+                                      onClick={() => handleShareComment(doc.id, doc)}
+                                    >
+                                      <Share2 className="h-4 w-4 text-blue-600" />
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1401,14 +1528,14 @@ const Approvals = () => {
                           </div>
                           
                           {/* Shared Comments from Previous Approvers */}
-                          {sharedComments['faculty-meeting']?.length > 0 && (
+                          {sharedComments['faculty-meeting']?.filter(s => shouldSeeSharedComment(s.sharedFor)).length > 0 && (
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <Share2 className="h-4 w-4 text-blue-600" />
-                                <span className="text-sm font-medium text-blue-700">Share Comment with Next Recipient(s)</span>
+                                <span className="text-sm font-medium text-blue-700">Comments Shared by Previous Recipient</span>
                               </div>
                               <div className="space-y-2">
-                                {sharedComments['faculty-meeting'].map((shared, index) => (
+                                {sharedComments['faculty-meeting'].filter(s => shouldSeeSharedComment(s.sharedFor)).map((shared, index) => (
                                   <div key={index} className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm flex justify-between items-start">
                                     <div className="flex-1">
                                       <p className="text-blue-800">{shared.comment}</p>
@@ -1417,14 +1544,20 @@ const Approvals = () => {
                                     <div className="flex gap-1 ml-2">
                                       <button 
                                         className="px-4 py-2 bg-blue-200 rounded-full flex items-center justify-center hover:bg-blue-300 transition-colors"
-                                        onClick={() => handleEditSharedComment('faculty-meeting', index)}
+                                        onClick={() => {
+                                          const originalIndex = sharedComments['faculty-meeting'].findIndex(s => s.comment === shared.comment && s.timestamp === shared.timestamp);
+                                          handleEditSharedComment('faculty-meeting', originalIndex);
+                                        }}
                                         title="Edit"
                                       >
                                         <SquarePen className="h-4 w-4 text-blue-700" />
                                       </button>
                                       <button 
                                         className="px-4 py-2 bg-blue-200 rounded-full flex items-center justify-center hover:bg-blue-300 transition-colors"
-                                        onClick={() => handleUndoSharedComment('faculty-meeting', index)}
+                                        onClick={() => {
+                                          const originalIndex = sharedComments['faculty-meeting'].findIndex(s => s.comment === shared.comment && s.timestamp === shared.timestamp);
+                                          handleUndoSharedComment('faculty-meeting', originalIndex);
+                                        }}
                                         title="Undo"
                                       >
                                         <Undo2 className="h-4 w-4 text-blue-700" />
@@ -1437,27 +1570,36 @@ const Approvals = () => {
                           )}
                           
                           {/* Your Comments */}
-                          {comments['faculty-meeting']?.length > 0 && (
+                          {comments['faculty-meeting']?.filter(c => c.author === user?.name).length > 0 && (
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <MessageSquare className="h-4 w-4" />
                                 <span className="text-sm font-medium">Your Comments</span>
                               </div>
                               <div className="space-y-2">
-                                {comments['faculty-meeting'].map((comment, index) => (
+                                {comments['faculty-meeting'].filter(c => c.author === user?.name).map((commentObj, index) => (
                                   <div key={index} className="bg-muted p-3 rounded-lg text-sm flex justify-between items-start">
-                                    <p className="flex-1">{comment}</p>
+                                    <div className="flex-1">
+                                      <p>{commentObj.message}</p>
+                                      <p className="text-xs text-muted-foreground mt-1">{commentObj.date}</p>
+                                    </div>
                                     <div className="flex gap-1 ml-2">
                                       <button 
                                         className="px-4 py-2 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                        onClick={() => handleEditComment('faculty-meeting', index)}
+                                        onClick={() => {
+                                          const originalIndex = comments['faculty-meeting'].findIndex(c => c.message === commentObj.message && c.date === commentObj.date);
+                                          handleEditComment('faculty-meeting', originalIndex);
+                                        }}
                                         title="Edit"
                                       >
                                         <SquarePen className="h-4 w-4 text-gray-600" />
                                       </button>
                                       <button 
                                         className="px-4 py-2 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                        onClick={() => handleUndoComment('faculty-meeting', index)}
+                                        onClick={() => {
+                                          const originalIndex = comments['faculty-meeting'].findIndex(c => c.message === commentObj.message && c.date === commentObj.date);
+                                          handleUndoComment('faculty-meeting', originalIndex);
+                                        }}
                                         title="Undo"
                                       >
                                         <Undo2 className="h-4 w-4 text-gray-600" />
@@ -1505,13 +1647,15 @@ const Approvals = () => {
                                 >
                                   <ChevronRight className="h-4 w-4 text-gray-600" />
                                 </button>
-                                <button 
-                                  className="px-3 py-2 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition-colors"
-                                  title="Share comment with next recipient(s)"
-                                  onClick={() => handleShareComment('faculty-meeting')}
-                                >
-                                  <Share2 className="h-4 w-4 text-blue-600" />
-                                </button>
+                                {!isLastRecipient({ id: 'faculty-meeting', workflow: null, recipientIds: null }) && (
+                                  <button 
+                                    className="px-3 py-2 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition-colors"
+                                    title="Share comment with next recipient(s)"
+                                    onClick={() => handleShareComment('faculty-meeting')}
+                                  >
+                                    <Share2 className="h-4 w-4 text-blue-600" />
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1621,14 +1765,14 @@ const Approvals = () => {
                           </div>
                           
                           {/* Shared Comments from Previous Approvers */}
-                          {sharedComments['budget-request']?.length > 0 && (
+                          {sharedComments['budget-request']?.filter(s => shouldSeeSharedComment(s.sharedFor)).length > 0 && (
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <Share2 className="h-4 w-4 text-blue-600" />
-                                <span className="text-sm font-medium text-blue-700">Share Comment with Next Recipient(s)</span>
+                                <span className="text-sm font-medium text-blue-700">Comments Shared by Previous Recipient</span>
                               </div>
                               <div className="space-y-2">
-                                {sharedComments['budget-request'].map((shared, index) => (
+                                {sharedComments['budget-request'].filter(s => shouldSeeSharedComment(s.sharedFor)).map((shared, index) => (
                                   <div key={index} className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm flex justify-between items-start">
                                     <div className="flex-1">
                                       <p className="text-blue-800">{shared.comment}</p>
@@ -1637,14 +1781,20 @@ const Approvals = () => {
                                     <div className="flex gap-1 ml-2">
                                       <button 
                                         className="px-4 py-2 bg-blue-200 rounded-full flex items-center justify-center hover:bg-blue-300 transition-colors"
-                                        onClick={() => handleEditSharedComment('budget-request', index)}
+                                        onClick={() => {
+                                          const originalIndex = sharedComments['budget-request'].findIndex(s => s.comment === shared.comment && s.timestamp === shared.timestamp);
+                                          handleEditSharedComment('budget-request', originalIndex);
+                                        }}
                                         title="Edit"
                                       >
                                         <SquarePen className="h-4 w-4 text-blue-700" />
                                       </button>
                                       <button 
                                         className="px-4 py-2 bg-blue-200 rounded-full flex items-center justify-center hover:bg-blue-300 transition-colors"
-                                        onClick={() => handleUndoSharedComment('budget-request', index)}
+                                        onClick={() => {
+                                          const originalIndex = sharedComments['budget-request'].findIndex(s => s.comment === shared.comment && s.timestamp === shared.timestamp);
+                                          handleUndoSharedComment('budget-request', originalIndex);
+                                        }}
                                         title="Undo"
                                       >
                                         <Undo2 className="h-4 w-4 text-blue-700" />
@@ -1657,27 +1807,36 @@ const Approvals = () => {
                           )}
                           
                           {/* Your Comments */}
-                          {comments['budget-request']?.length > 0 && (
+                          {comments['budget-request']?.filter(c => c.author === user?.name).length > 0 && (
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <MessageSquare className="h-4 w-4" />
                                 <span className="text-sm font-medium">Your Comments</span>
                               </div>
                               <div className="space-y-2">
-                                {comments['budget-request'].map((comment, index) => (
+                                {comments['budget-request'].filter(c => c.author === user?.name).map((commentObj, index) => (
                                   <div key={index} className="bg-muted p-3 rounded-lg text-sm flex justify-between items-start">
-                                    <p className="flex-1">{comment}</p>
+                                    <div className="flex-1">
+                                      <p>{commentObj.message}</p>
+                                      <p className="text-xs text-muted-foreground mt-1">{commentObj.date}</p>
+                                    </div>
                                     <div className="flex gap-1 ml-2">
                                       <button 
                                         className="px-4 py-2 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                        onClick={() => handleEditComment('budget-request', index)}
+                                        onClick={() => {
+                                          const originalIndex = comments['budget-request'].findIndex(c => c.message === commentObj.message && c.date === commentObj.date);
+                                          handleEditComment('budget-request', originalIndex);
+                                        }}
                                         title="Edit"
                                       >
                                         <SquarePen className="h-4 w-4 text-gray-600" />
                                       </button>
                                       <button 
                                         className="px-4 py-2 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                        onClick={() => handleUndoComment('budget-request', index)}
+                                        onClick={() => {
+                                          const originalIndex = comments['budget-request'].findIndex(c => c.message === commentObj.message && c.date === commentObj.date);
+                                          handleUndoComment('budget-request', originalIndex);
+                                        }}
                                         title="Undo"
                                       >
                                         <Undo2 className="h-4 w-4 text-gray-600" />
@@ -1725,13 +1884,15 @@ const Approvals = () => {
                                 >
                                   <ChevronRight className="h-4 w-4 text-gray-600" />
                                 </button>
-                                <button 
-                                  className="px-3 py-2 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition-colors"
-                                  title="Share comment with next recipient(s)"
-                                  onClick={() => handleShareComment('budget-request')}
-                                >
-                                  <Share2 className="h-4 w-4 text-blue-600" />
-                                </button>
+                                {!isLastRecipient({ id: 'budget-request', workflow: null, recipientIds: null }) && (
+                                  <button 
+                                    className="px-3 py-2 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition-colors"
+                                    title="Share comment with next recipient(s)"
+                                    onClick={() => handleShareComment('budget-request')}
+                                  >
+                                    <Share2 className="h-4 w-4 text-blue-600" />
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1854,27 +2015,36 @@ const Approvals = () => {
                             </Badge>
                           </div>
                           
-                          {comments['student-event']?.length > 0 && (
+                          {comments['student-event']?.filter(c => c.author === user?.name).length > 0 && (
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <MessageSquare className="h-4 w-4" />
                                 <span className="text-sm font-medium">Your Comments</span>
                               </div>
                               <div className="space-y-2">
-                                {comments['student-event'].map((comment, index) => (
+                                {comments['student-event'].filter(c => c.author === user?.name).map((commentObj, index) => (
                                   <div key={index} className="bg-muted p-3 rounded-lg text-sm flex justify-between items-start">
-                                    <p className="flex-1">{comment}</p>
+                                    <div className="flex-1">
+                                      <p>{commentObj.message}</p>
+                                      <p className="text-xs text-muted-foreground mt-1">{commentObj.date}</p>
+                                    </div>
                                     <div className="flex gap-1 ml-2">
                                       <button 
                                         className="px-4 py-2 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                        onClick={() => handleEditComment('student-event', index)}
+                                        onClick={() => {
+                                          const originalIndex = comments['student-event'].findIndex(c => c.message === commentObj.message && c.date === commentObj.date);
+                                          handleEditComment('student-event', originalIndex);
+                                        }}
                                         title="Edit"
                                       >
                                         <SquarePen className="h-4 w-4 text-gray-600" />
                                       </button>
                                       <button 
                                         className="px-4 py-2 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                        onClick={() => handleUndoComment('student-event', index)}
+                                        onClick={() => {
+                                          const originalIndex = comments['student-event'].findIndex(c => c.message === commentObj.message && c.date === commentObj.date);
+                                          handleUndoComment('student-event', originalIndex);
+                                        }}
                                         title="Undo"
                                       >
                                         <Undo2 className="h-4 w-4 text-gray-600" />
@@ -2024,14 +2194,14 @@ const Approvals = () => {
                           </div>
                           
                           {/* Shared Comments from Previous Approvers */}
-                          {sharedComments['research-methodology']?.length > 0 && (
+                          {sharedComments['research-methodology']?.filter(s => shouldSeeSharedComment(s.sharedFor)).length > 0 && (
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <Share2 className="h-4 w-4 text-blue-600" />
-                                <span className="text-sm font-medium text-blue-700">Shared by Previous Recipient</span>
+                                <span className="text-sm font-medium text-blue-700">Comments Shared by Previous Recipient</span>
                               </div>
                               <div className="space-y-2">
-                                {sharedComments['research-methodology'].map((shared, index) => (
+                                {sharedComments['research-methodology'].filter(s => shouldSeeSharedComment(s.sharedFor)).map((shared, index) => (
                                   <div key={index} className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm">
                                     <p className="text-blue-800">{shared.comment}</p>
                                     <p className="text-xs text-blue-600 mt-1">— {shared.sharedBy}</p>
@@ -2042,27 +2212,36 @@ const Approvals = () => {
                           )}
                           
                           {/* Your Comments */}
-                          {comments['research-methodology']?.length > 0 && (
+                          {comments['research-methodology']?.filter(c => c.author === user?.name).length > 0 && (
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <MessageSquare className="h-4 w-4" />
                                 <span className="text-sm font-medium">Your Comments</span>
                               </div>
                               <div className="space-y-2">
-                                {comments['research-methodology'].map((comment, index) => (
+                                {comments['research-methodology'].filter(c => c.author === user?.name).map((commentObj, index) => (
                                   <div key={index} className="bg-muted p-3 rounded-lg text-sm flex justify-between items-start">
-                                    <p className="flex-1">{comment}</p>
+                                    <div className="flex-1">
+                                      <p>{commentObj.message}</p>
+                                      <p className="text-xs text-muted-foreground mt-1">{commentObj.date}</p>
+                                    </div>
                                     <div className="flex gap-1 ml-2">
                                       <button 
                                         className="px-4 py-2 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                        onClick={() => handleEditComment('research-methodology', index)}
+                                        onClick={() => {
+                                          const originalIndex = comments['research-methodology'].findIndex(c => c.message === commentObj.message && c.date === commentObj.date);
+                                          handleEditComment('research-methodology', originalIndex);
+                                        }}
                                         title="Edit"
                                       >
                                         <SquarePen className="h-4 w-4 text-gray-600" />
                                       </button>
                                       <button 
                                         className="px-4 py-2 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                        onClick={() => handleUndoComment('research-methodology', index)}
+                                        onClick={() => {
+                                          const originalIndex = comments['research-methodology'].findIndex(c => c.message === commentObj.message && c.date === commentObj.date);
+                                          handleUndoComment('research-methodology', originalIndex);
+                                        }}
                                         title="Undo"
                                       >
                                         <Undo2 className="h-4 w-4 text-gray-600" />
@@ -2110,13 +2289,15 @@ const Approvals = () => {
                                 >
                                   <ChevronRight className="h-4 w-4 text-gray-600" />
                                 </button>
-                                <button 
-                                  className="px-3 py-2 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition-colors"
-                                  title="Share comment with next recipient(s)"
-                                  onClick={() => handleShareComment('research-methodology')}
-                                >
-                                  <Share2 className="h-4 w-4 text-blue-600" />
-                                </button>
+                                {!isLastRecipient({ id: 'research-methodology', workflow: null, recipientIds: null }) && (
+                                  <button 
+                                    className="px-3 py-2 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition-colors"
+                                    title="Share comment with next recipient(s)"
+                                    onClick={() => handleShareComment('research-methodology')}
+                                  >
+                                    <Share2 className="h-4 w-4 text-blue-600" />
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>
