@@ -112,10 +112,56 @@ const Messages = () => {
   }, []);
 
   const loadLiveMeetRequests = useCallback(() => {
-    const requests = JSON.parse(localStorage.getItem('livemeet-requests') || '[]');
-    setLiveMeetRequests(requests);
-    setStats(prev => ({ ...prev, liveMeetingRequests: requests.length }));
-  }, []);
+    // Load all LiveMeet+ requests from localStorage
+    const allRequests = JSON.parse(localStorage.getItem('livemeet-requests') || '[]');
+    
+    if (!user) {
+      setLiveMeetRequests([]);
+      setStats(prev => ({ ...prev, liveMeetingRequests: 0 }));
+      return;
+    }
+    
+    // Get current user information
+    const currentUserId = user.id;
+    const currentUserName = user.name;
+    const currentUserRole = user.role;
+    
+    // ⭐ FILTER: Show only requests where current user is a target participant (NOT the initiator)
+    const filteredRequests = allRequests.filter((request: any) => {
+      // First, check if user is the initiator - if so, EXCLUDE this request
+      if (request.submitter && currentUserName) {
+        if (request.submitter.toLowerCase().trim() === currentUserName.toLowerCase().trim()) {
+          console.log(`[LiveMeet+ Filtering] Excluding request initiated by current user: ${request.title}`);
+          return false; // Initiator should NOT see their own request
+        }
+      }
+      
+      // Check if current user ID is in targetParticipantIds array
+      if (request.targetParticipantIds && Array.isArray(request.targetParticipantIds)) {
+        if (request.targetParticipantIds.includes(currentUserId)) {
+          return true;
+        }
+      }
+      
+      // Fallback: Check by name if ID matching doesn't work
+      if (request.targetParticipants && Array.isArray(request.targetParticipants)) {
+        const nameMatch = request.targetParticipants.some((name: string) => 
+          name.toLowerCase().trim() === currentUserName?.toLowerCase().trim()
+        );
+        if (nameMatch) {
+          return true;
+        }
+      }
+      
+      return false;
+    });
+    
+    console.log(`[LiveMeet+ Filtering] User: ${currentUserName} | Total requests: ${allRequests.length} | Filtered: ${filteredRequests.length}`);
+    
+    // Update state with filtered requests only
+    setLiveMeetRequests(filteredRequests);
+    setStats(prev => ({ ...prev, liveMeetingRequests: filteredRequests.length }));
+  }, [user]);
 
   // Instant initialization effect
   useEffect(() => {

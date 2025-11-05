@@ -293,6 +293,118 @@ export const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ cl
         ? await convertFilesToBase64(uploadedFiles)
         : [];
       
+      // Map recipient IDs to display names for UI
+      const getRecipientName = (recipientId: string) => {
+        const recipientMap: { [key: string]: string } = {
+          // Leadership
+          'principal-dr.-robert-principal': 'Dr. Robert Principal',
+          'registrar-prof.-sarah-registrar': 'Prof. Sarah Registrar',
+          'dean-dr.-maria-dean': 'Dr. Maria Dean',
+          'chairman-mr.-david-chairman': 'Mr. David Chairman',
+          'director-(for-information)-ms.-lisa-director': 'Ms. Lisa Director',
+          'leadership-prof.-leadership-officer': 'Prof. Leadership Officer',
+          
+          // CDC Employees
+          'cdc-head-dr.-cdc-head': 'Dr. CDC Head',
+          'cdc-coordinator-prof.-cdc-coordinator': 'Prof. CDC Coordinator',
+          
+          // HODs
+          'hod-dr.-eee-hod-eee': 'Dr. EEE HOD',
+          'hod-dr.-mech-hod-mech': 'Dr. MECH HOD',
+          'hod-dr.-cse-hod-cse': 'Dr. CSE HOD',
+          'hod-dr.-ece-hod-ece': 'Dr. ECE HOD',
+          'hod-dr.-csm-hod-csm': 'Dr. CSM HOD',
+          'hod-dr.-cso-hod-cso': 'Dr. CSO HOD',
+          'hod-dr.-csd-hod-csd': 'Dr. CSD HOD',
+          'hod-dr.-csc-hod-csc': 'Dr. CSC HOD',
+          
+          // Program Department Heads
+          'program-department-head-prof.-eee-head-eee': 'Prof. EEE Head',
+          'program-department-head-prof.-mech-head-mech': 'Prof. MECH Head',
+          'program-department-head-prof.-cse-head-cse': 'Prof. CSE Head',
+          'program-department-head-prof.-ece-head-ece': 'Prof. ECE Head',
+          'program-department-head-prof.-csm-head-csm': 'Prof. CSM Head',
+          'program-department-head-prof.-cso-head-cso': 'Prof. CSO Head',
+          'program-department-head-prof.-csd-head-csd': 'Prof. CSD Head',
+          'program-department-head-prof.-csc-head-csc': 'Prof. CSC Head'
+        };
+        
+        // If we have a mapping, use it
+        if (recipientMap[recipientId]) {
+          return recipientMap[recipientId];
+        }
+        
+        // Otherwise, try to extract the name from the ID
+        const parts = recipientId.split('-');
+        
+        // Try to find name pattern (usually contains Dr., Prof., Mr., Ms., etc.)
+        let name = '';
+        for (let i = 0; i < parts.length; i++) {
+          if (parts[i].match(/^(dr\.|prof\.|mr\.|ms\.|dr|prof|mr|ms)$/i)) {
+            // Found a title, collect the name parts
+            const titleIndex = i;
+            name = parts.slice(titleIndex).join(' ');
+            // Clean up and capitalize
+            name = name.replace(/-/g, ' ')
+                      .split(' ')
+                      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                      .join(' ');
+            break;
+          }
+        }
+        
+        // If we couldn't extract a proper name, use the whole ID cleaned up
+        if (!name) {
+          name = recipientId.replace(/-/g, ' ')
+                           .split(' ')
+                           .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                           .join(' ');
+        }
+        
+        return name;
+      };
+      
+      // Convert recipient IDs to display names
+      const recipientNames = selectedRecipients.map((id: string) => getRecipientName(id));
+      
+      console.log('📋 [Approval Chain Bypass] Creating tracking card with recipients:', {
+        selectedRecipients: selectedRecipients,
+        recipientNames: recipientNames
+      });
+      
+      // Helper function to get step name from recipient ID
+      const getStepNameFromRecipient = (recipientId: string): string => {
+        const recipientLower = recipientId.toLowerCase();
+        
+        if (recipientLower.includes('principal')) return 'Principal Approval';
+        if (recipientLower.includes('registrar')) return 'Registrar Review';
+        if (recipientLower.includes('dean')) return 'Dean Review';
+        if (recipientLower.includes('hod')) return 'HOD Review';
+        if (recipientLower.includes('program-department-head')) return 'Program Head Review';
+        if (recipientLower.includes('chairman')) return 'Chairman Review';
+        if (recipientLower.includes('director')) return 'Director Review';
+        if (recipientLower.includes('controller')) return 'Controller Review';
+        if (recipientLower.includes('cdc-head')) return 'CDC Head Review';
+        if (recipientLower.includes('cdc-coordinator')) return 'CDC Coordinator Review';
+        if (recipientLower.includes('librarian')) return 'Librarian Review';
+        if (recipientLower.includes('employee')) return 'Employee Review';
+        
+        // Default fallback
+        return 'Approval';
+      };
+      
+      // Create individual workflow steps for each recipient (like "New Course Proposal - Data Science")
+      const recipientSteps = selectedRecipients.map((recipientId: string, index: number) => {
+        const recipientName = getRecipientName(recipientId);
+        const stepName = getStepNameFromRecipient(recipientId);
+        
+        return {
+          name: stepName,
+          status: index === 0 ? 'current' : 'pending', // First recipient is current, others are pending
+          assignee: recipientName
+        };
+      });
+      
       // Create tracking card data following the exact same layout as "New Course Proposal – Data Science"
       const trackingCard = {
         id: `DOC-${Date.now()}`,
@@ -307,16 +419,21 @@ export const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ cl
                  documentPriority === 'medium' ? 'Medium Priority' :
                  documentPriority === 'high' ? 'High Priority' : 'Urgent Priority',
         workflow: {
-          currentStep: selectedRecipients.length > 0 ? 'Pending Approval' : 'Complete',
+          currentStep: selectedRecipients.length > 0 ? recipientSteps[0].name : 'Complete',
           progress: 0,
           steps: [
             { name: 'Submission', status: 'completed', assignee: currentUserName, completedDate: new Date().toISOString().split('T')[0] },
-            ...(selectedRecipients.length > 0 ? [{ name: 'Pending Approval', status: 'current', assignee: 'Recipients' }] : [{ name: 'Bypass Approval', status: 'completed', assignee: 'System', completedDate: new Date().toISOString().split('T')[0] }])
+            ...(selectedRecipients.length > 0 
+              ? recipientSteps // Individual steps for each recipient like demo card
+              : [{ name: 'Bypass Approval', status: 'completed', assignee: 'System', completedDate: new Date().toISOString().split('T')[0] }]
+            )
           ]
         },
         requiresSignature: true,
         signedBy: [currentUserName],
         description: documentDescription,
+        recipients: recipientNames, // Display names for UI
+        recipientIds: selectedRecipients, // Original IDs for matching
         files: serializedFiles,
         comments: []
       };

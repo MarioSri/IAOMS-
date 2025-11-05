@@ -2447,13 +2447,22 @@ const Approvals = () => {
                                 target.style.height = target.scrollHeight + 'px';
                               }}
                             />
-                            <button 
-                              className="px-4 py-2 bg-gray-200 rounded-full m-2 flex items-center justify-center hover:bg-gray-300 transition-colors"
-                              title="Save comment"
-                              onClick={() => handleAddComment('student-event')}
-                            >
-                              <ChevronRight className="h-4 w-4 text-gray-600" />
-                            </button>
+                            <div className="flex gap-1 m-2">
+                              <button 
+                                className="px-3 py-2 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
+                                title="Send comment"
+                                onClick={() => handleAddComment('student-event')}
+                              >
+                                <ChevronRight className="h-4 w-4 text-gray-600" />
+                              </button>
+                              <button 
+                                className="px-3 py-2 bg-blue-100 rounded-full flex items-center justify-center hover:bg-blue-200 transition-colors"
+                                title="Share comment with next recipient(s)"
+                                onClick={() => handleShareComment('student-event')}
+                              >
+                                <Share2 className="h-4 w-4 text-blue-600" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                         <div className="flex flex-col gap-2 min-w-[150px]">
@@ -2564,7 +2573,7 @@ const Approvals = () => {
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <Share2 className="h-4 w-4 text-blue-600" />
-                                <span className="text-sm font-medium text-blue-700">Comment Shared by Previous Approver</span>
+                                <span className="text-sm font-medium text-blue-700">Comment Shared by Previous Recipient</span>
                               </div>
                               <div className="space-y-2">
                                 {sharedComments['research-methodology'].filter(s => shouldSeeSharedComment(s.sharedFor)).map((shared, index) => (

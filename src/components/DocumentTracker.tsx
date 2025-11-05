@@ -835,11 +835,7 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
                                 Escalated 2x
                               </Badge>
                             )}
-                            {document.id === 'DOC-002' && step.name === 'Department Review' && (
-                              <Badge variant="outline" className="text-xs bg-orange-100 border-orange-300 text-orange-700">
-                                Escalated 1x
-                              </Badge>
-                            )}
+
                             {document.id === 'DOC-002' && step.name === 'Academic Committee' && (
                               <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-300">
                                 BYPASS

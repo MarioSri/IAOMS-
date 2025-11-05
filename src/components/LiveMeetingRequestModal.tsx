@@ -32,6 +32,7 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Checkbox } from './ui/checkbox';
 import { Input } from './ui/input';
 import { useToast } from '../hooks/use-toast';
+import { useAuth } from '../contexts/AuthContext';
 import { liveMeetingService } from '../services/LiveMeetingService';
 import { CreateLiveMeetingRequestDto, PURPOSE_CONFIGS, URGENCY_CONFIGS } from '../types/liveMeeting';
 
@@ -80,6 +81,7 @@ export const LiveMeetingRequestModal: React.FC<LiveMeetingRequestModalProps> = (
   const [newParticipantRole, setNewParticipantRole] = useState('');
 
   const { toast } = useToast();
+  const { user } = useAuth();
 
   useEffect(() => {
     if (isOpen) {
@@ -223,7 +225,8 @@ export const LiveMeetingRequestModal: React.FC<LiveMeetingRequestModalProps> = (
         id: `livemeet-${Date.now()}`,
         title: documentTitle,
         type: sourceDoc?.type.toLowerCase() || documentType,
-        submitter: 'Current User', // Will be replaced with actual user name
+        submitter: user?.name || 'Current User',
+        submitterRole: user?.role || 'employee',
         submittedDate: sourceDoc?.date || new Date().toISOString().split('T')[0],
         status: 'pending',
         priority: urgency === 'immediate' ? 'immediate' : urgency === 'urgent' ? 'urgent' : 'normal',
@@ -242,6 +245,15 @@ export const LiveMeetingRequestModal: React.FC<LiveMeetingRequestModalProps> = (
       const existingRequests = JSON.parse(localStorage.getItem('livemeet-requests') || '[]');
       existingRequests.unshift(cardData);
       localStorage.setItem('livemeet-requests', JSON.stringify(existingRequests));
+
+      // Trigger storage event for real-time updates
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'livemeet-requests',
+        newValue: JSON.stringify(existingRequests),
+        storageArea: localStorage
+      }));
+
+      console.log(`[LiveMeet+] Request created by ${user?.name} for: ${selectedParticipantNames.join(', ')}`);
 
       // Show success toast with participant names
       toast({
@@ -498,11 +510,11 @@ export const LiveMeetingRequestModal: React.FC<LiveMeetingRequestModalProps> = (
               </div>
             </div>
 
-            {/* Select Participants Section */}
+            {/* Select Recipients Section */}
             <div className="mb-4">
               <label className="flex items-center space-x-2 text-lg font-semibold text-gray-800 mb-4">
                 <UserPlus className="w-5 h-5 text-indigo-600" />
-                <span>Select Participants</span>
+                <span>Select Recipients</span>
               </label>
               
               <div className="space-y-2 max-h-48 overflow-y-auto">

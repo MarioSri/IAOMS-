@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,13 @@ import { LiveMeetingRequestModal } from "./LiveMeetingRequestModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { meetingAPI } from "@/services/MeetingAPIService";
+import { 
+  filterMeetingsByRecipient, 
+  addMeetingToStorage, 
+  loadMeetingsFromStorage,
+  updateMeetingInStorage,
+  deleteMeetingFromStorage
+} from "@/utils/meetingFilters";
 import {
   Meeting,
   MeetingAttendee,
@@ -156,7 +163,7 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
   // State Management
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [allMeetings, setAllMeetings] = useState<Meeting[]>([]); // Store all meetings before filtering
   const [loading, setLoading] = useState(false);
   const [conflicts, setConflicts] = useState<ConflictCheck | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<AISchedulingSuggestion | null>(null);
@@ -170,6 +177,11 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
   const [showMeetingDetails, setShowMeetingDetails] = useState(false);
   const [showEditMeeting, setShowEditMeeting] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
+  
+  // Computed filtered meetings - only show meetings where user is organizer or attendee
+  const meetings = useMemo(() => {
+    return filterMeetingsByRecipient(allMeetings, user);
+  }, [allMeetings, user]);
   
   // New Meeting Form State
   const [newMeeting, setNewMeeting] = useState<Partial<Meeting>>({
@@ -224,12 +236,6 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
     comments: []
   });
 
-  // Mock data for development - replace with API calls
-  useEffect(() => {
-    loadMeetings();
-    saveCalendarData();
-  }, []);
-  
   // Save calendar data to localStorage for search
   const saveCalendarData = () => {
     const calendarEvents = [
@@ -242,9 +248,12 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
     localStorage.setItem('calendarEvents', JSON.stringify(calendarEvents));
   };
 
-  const loadMeetings = async () => {
+  const loadMeetings = useCallback(async () => {
     setLoading(true);
     try {
+      // Load meetings from localStorage
+      const storedMeetings = loadMeetingsFromStorage();
+      
       // Mock meetings data - replace with actual API call
       const mockMeetings: Meeting[] = [
         {
@@ -383,7 +392,27 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
         }
       ];
       
-      setMeetings(mockMeetings);
+      // Combine stored meetings with mock meetings
+      const combinedMeetings = [...storedMeetings, ...mockMeetings];
+      
+      // Remove duplicates based on ID
+      const uniqueMeetings = combinedMeetings.filter((meeting, index, self) =>
+        index === self.findIndex((m) => m.id === meeting.id)
+      );
+      
+      console.log(`[MeetingScheduler] 📊 Loaded ${uniqueMeetings.length} meetings (${storedMeetings.length} from storage, ${mockMeetings.length} mock)`);
+      
+      // Debug: Log stored meetings details
+      if (storedMeetings.length > 0) {
+        console.log('[MeetingScheduler] 💾 Stored meetings:', storedMeetings.map(m => ({
+          id: m.id,
+          title: m.title,
+          date: m.date,
+          createdBy: m.createdBy
+        })));
+      }
+      
+      setAllMeetings(uniqueMeetings);
     } catch (error) {
       toast({
         title: "Error",
@@ -393,7 +422,35 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, toast]);
+
+  // Load meetings on mount and listen for updates
+  useEffect(() => {
+    // Don't load meetings if user is not available yet
+    if (!user) {
+      console.log('[MeetingScheduler] ⏳ Waiting for user to load before fetching meetings');
+      return;
+    }
+
+    console.log('[MeetingScheduler] 🔄 Loading meetings for user:', user.name);
+    loadMeetings();
+    saveCalendarData();
+    
+    // Listen for storage events (from other components)
+    const handleStorageChange = () => {
+      console.log('[MeetingScheduler] 📡 Storage event detected - reloading meetings');
+      loadMeetings();
+    };
+    
+    // Listen for custom meetings-updated event
+    window.addEventListener('meetings-updated', handleStorageChange);
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('meetings-updated', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [loadMeetings]);
 
   // Helper functions
   const timeSlots = [
@@ -499,7 +556,20 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
         recurringPattern: newMeeting.isRecurring ? recurringPattern : undefined
       } as Meeting);
 
-      setMeetings(prev => [response.meeting, ...prev]);
+      console.log('[MeetingScheduler] ✨ New meeting created:', {
+        id: response.meeting.id,
+        title: response.meeting.title,
+        date: response.meeting.date,
+        time: response.meeting.time,
+        createdBy: response.meeting.createdBy,
+        attendees: response.meeting.attendees.length
+      });
+
+      // Save to localStorage and dispatch event for cross-component updates
+      addMeetingToStorage(response.meeting);
+      
+      // Update local state
+      setAllMeetings(prev => [response.meeting, ...prev]);
       setShowNewMeetingDialog(false);
       resetNewMeetingForm();
 
@@ -674,7 +744,8 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
       createdAt: new Date(),
       updatedAt: new Date()
     };
-    setMeetings(prev => [duplicatedMeeting, ...prev]);
+    addMeetingToStorage(duplicatedMeeting);
+    setAllMeetings(prev => [duplicatedMeeting, ...prev]);
     toast({
       title: "Meeting Duplicated",
       description: `${meeting.title} has been duplicated`,
@@ -683,7 +754,8 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
   };
 
   const handleCancelMeeting = (meeting: Meeting) => {
-    setMeetings(prev => prev.map(m => 
+    updateMeetingInStorage(meeting.id, { status: 'cancelled' as const });
+    setAllMeetings(prev => prev.map(m => 
       m.id === meeting.id 
         ? { ...m, status: 'cancelled' as const }
         : m
@@ -697,9 +769,11 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
 
   const handleSaveEditMeeting = () => {
     if (editingMeeting && newMeeting.title && newMeeting.date && newMeeting.time) {
-      setMeetings(prev => prev.map(m => 
+      const updatedMeeting = { ...editingMeeting, ...newMeeting, updatedAt: new Date() };
+      updateMeetingInStorage(editingMeeting.id, updatedMeeting);
+      setAllMeetings(prev => prev.map(m => 
         m.id === editingMeeting.id 
-          ? { ...m, ...newMeeting, updatedAt: new Date() }
+          ? updatedMeeting
           : m
       ));
       setShowEditMeeting(false);

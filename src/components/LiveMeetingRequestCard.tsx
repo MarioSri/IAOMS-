@@ -94,7 +94,7 @@ export const LiveMeetingRequestCard: React.FC<LiveMeetingRequestCardProps> = ({
             </CardTitle>
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <User className="h-4 w-4" />
-              <span>From: {request.requesterName} • HOD</span>
+              <span>From: {request.requesterName} • {request.requesterRole.toUpperCase()}</span>
             </div>
           </div>
           
@@ -156,28 +156,6 @@ export const LiveMeetingRequestCard: React.FC<LiveMeetingRequestCardProps> = ({
             <p className="text-sm text-gray-700">{request.agenda}</p>
           </div>
         )}
-
-        {/* Participants */}
-        <div>
-          <h4 className="font-medium text-sm mb-2">Participants:</h4>
-          <div className="flex items-center gap-2">
-            {request.participants.slice(0, 3).map((participant) => (
-              <div key={participant.id} className="flex items-center gap-1">
-                <Avatar className="h-6 w-6">
-                  <AvatarFallback className="text-xs">
-                    {participant.userName.split(' ').map(n => n[0]).join('')}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-xs text-gray-600">{participant.userName}</span>
-              </div>
-            ))}
-            {request.participants.length > 3 && (
-              <span className="text-xs text-gray-500">
-                +{request.participants.length - 3} more
-              </span>
-            )}
-          </div>
-        </div>
 
         <Separator />
 

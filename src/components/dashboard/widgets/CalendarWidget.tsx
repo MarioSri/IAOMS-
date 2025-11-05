@@ -6,6 +6,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useResponsive } from '@/hooks/useResponsive';
 import { cn } from '@/lib/utils';
+import { filterMeetingsByRecipient, loadMeetingsFromStorage } from '@/utils/meetingFilters';
+import { Meeting, MeetingAttendee } from '@/types/meeting';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -15,25 +17,10 @@ import {
   Plus,
   Bell,
   ArrowRight,
-  AlertTriangle
+  AlertTriangle,
+  CheckCircle2,
+  XCircle
 } from 'lucide-react';
-
-interface Meeting {
-  id: string;
-  title: string;
-  description: string;
-  date: string;
-  time: string;
-  duration: number;
-  attendees: string[];
-  location: string;
-  type: 'in-person' | 'virtual';
-  status: 'confirmed' | 'pending' | 'cancelled';
-  priority: 'low' | 'medium' | 'high' | 'emergency';
-  organizer: string;
-  requiresApproval: boolean;
-  linkedDocuments: string[];
-}
 
 interface CalendarWidgetProps {
   userRole: string;
@@ -57,12 +44,63 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
 
+  // Meeting platforms configuration
+  const meetingPlatforms = [
+    { value: 'google-meet', label: 'Google Meet' },
+    { value: 'zoom', label: 'Zoom' },
+    { value: 'teams', label: 'Microsoft Teams' },
+    { value: 'webex', label: 'Webex' }
+  ];
+
+  // Helper function to format time (matching MeetingScheduler.tsx)
+  const formatTime = (time: string) => {
+    const [hours, minutes] = time.split(':');
+    const hour = parseInt(hours);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${minutes} ${ampm}`;
+  };
+
+  // Helper function to get meeting type icon
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'online':
+        return <Video className="w-3 h-3" />;
+      case 'hybrid':
+        return <Video className="w-3 h-3" />;
+      case 'in-person':
+        return <MapPin className="w-3 h-3" />;
+      default:
+        return <MapPin className="w-3 h-3" />;
+    }
+  };
+
+  // Helper function to handle joining a meeting
+  const handleJoinMeeting = (meeting: Meeting) => {
+    if (meeting.meetingLinks?.googleMeet?.joinUrl) {
+      window.open(meeting.meetingLinks.googleMeet.joinUrl, '_blank');
+    } else if (meeting.meetingLinks?.zoom?.joinUrl) {
+      window.open(meeting.meetingLinks.zoom.joinUrl, '_blank');
+    } else if (meeting.meetingLinks?.teams?.joinUrl) {
+      window.open(meeting.meetingLinks.teams.joinUrl, '_blank');
+    } else {
+      console.warn('No meeting link available for:', meeting.title);
+    }
+  };
+
   useEffect(() => {
+    // Don't fetch if user is not loaded yet
+    if (!user) {
+      console.log('[Calendar Widget] ⏳ Waiting for user to load before fetching meetings');
+      return;
+    }
+
     // Simulate API call to fetch meetings
     const fetchMeetings = async () => {
       setLoading(true);
+      console.log('[Calendar Widget] 🔄 Fetching meetings for user:', user.name);
       
-      const mockMeetings: Meeting[] = [
+      const mockMeetings = [
         {
           id: '1',
           title: 'Faculty Recruitment Review',
@@ -70,14 +108,24 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
           date: '2024-01-18',
           time: '10:00 AM',
           duration: 90,
-          attendees: ['Principal', 'Registrar', 'HOD-CSE', 'HR Head'],
+          attendees: [
+            { id: 'principal-001', name: 'Dr. Principal', email: 'principal@iaoms.edu', role: 'Principal', status: 'accepted', isRequired: true, canEdit: false },
+            { id: 'registrar-001', name: 'Prof. Registrar', email: 'registrar@iaoms.edu', role: 'Registrar', status: 'accepted', isRequired: true, canEdit: false },
+            { id: 'hod-cse-001', name: 'Dr. HOD-CSE', email: 'hod.cse@iaoms.edu', role: 'HOD', department: 'Computer Science', status: 'invited', isRequired: true, canEdit: false },
+            { id: 'hr-head-001', name: 'Ms. HR Head', email: 'hr@iaoms.edu', role: 'HR Head', status: 'accepted', isRequired: true, canEdit: false }
+          ],
           location: 'Conference Room A',
-          type: 'in-person',
+          type: 'online',
           status: 'confirmed',
           priority: 'high',
-          organizer: 'Principal',
-          requiresApproval: false,
-          linkedDocuments: ['DOC-2024-001']
+          createdBy: 'principal-001',
+          category: 'recruitment',
+          isRecurring: false,
+          tags: [],
+          department: 'Administration',
+          documents: [],
+          createdAt: new Date('2024-01-15T09:00:00Z'),
+          updatedAt: new Date('2024-01-16T14:30:00Z')
         },
         {
           id: '2',
@@ -86,14 +134,24 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
           date: '2024-01-17',
           time: '2:00 PM',
           duration: 60,
-          attendees: ['Principal', 'Registrar', 'Maintenance Head', 'Finance Head'],
+          attendees: [
+            { id: 'principal-001', name: 'Dr. Principal', email: 'principal@iaoms.edu', role: 'Principal', status: 'accepted', isRequired: true, canEdit: false },
+            { id: 'registrar-001', name: 'Prof. Registrar', email: 'registrar@iaoms.edu', role: 'Registrar', status: 'accepted', isRequired: true, canEdit: false },
+            { id: 'maintenance-001', name: 'Mr. Maintenance Head', email: 'maintenance@iaoms.edu', role: 'Maintenance Head', status: 'accepted', isRequired: true, canEdit: false },
+            { id: 'finance-001', name: 'Mr. Finance Head', email: 'finance@iaoms.edu', role: 'Finance Head', status: 'accepted', isRequired: true, canEdit: false }
+          ],
           location: 'Principal Office',
-          type: 'in-person',
+          type: 'online',
           status: 'confirmed',
-          priority: 'emergency',
-          organizer: 'Principal',
-          requiresApproval: false,
-          linkedDocuments: ['DOC-2024-003']
+          priority: 'urgent',
+          createdBy: 'principal-001',
+          category: 'emergency',
+          isRecurring: false,
+          tags: [],
+          department: 'Administration',
+          documents: [],
+          createdAt: new Date('2024-01-16T08:00:00Z'),
+          updatedAt: new Date('2024-01-16T08:00:00Z')
         },
         {
           id: '3',
@@ -102,14 +160,23 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
           date: '2024-01-19',
           time: '11:00 AM',
           duration: 120,
-          attendees: ['HOD-EEE', 'Program Heads', 'Academic Cell'],
-          location: 'Virtual Meeting',
-          type: 'virtual',
-          status: 'pending',
+          attendees: [
+            { id: 'hod-eee-001', name: 'Dr. HOD-EEE', email: 'hod.eee@iaoms.edu', role: 'HOD', department: 'Electrical Engineering', status: 'accepted', isRequired: true, canEdit: false },
+            { id: 'program-head-eee-001', name: 'Dr. Program Head EEE', email: 'program.eee@iaoms.edu', role: 'Program Head', department: 'Electrical Engineering', status: 'invited', isRequired: true, canEdit: false },
+            { id: 'academic-cell-001', name: 'Prof. Academic Cell', email: 'academic@iaoms.edu', role: 'Academic Coordinator', status: 'invited', isRequired: true, canEdit: false }
+          ],
+          location: 'google-meet',
+          type: 'online',
+          status: 'scheduled',
           priority: 'medium',
-          organizer: 'HOD-EEE',
-          requiresApproval: userRole === 'principal' || userRole === 'registrar',
-          linkedDocuments: ['DOC-2024-004']
+          createdBy: 'hod-eee-001',
+          category: 'academic',
+          isRecurring: true,
+          tags: [],
+          department: 'Electrical Engineering',
+          documents: [],
+          createdAt: new Date('2024-01-14T10:00:00Z'),
+          updatedAt: new Date('2024-01-14T10:00:00Z')
         },
         {
           id: '4',
@@ -118,48 +185,88 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
           date: '2024-01-20',
           time: '9:00 AM',
           duration: 180,
-          attendees: ['Principal', 'Registrar', 'All HODs', 'Finance Team'],
+          attendees: [
+            { id: 'principal-001', name: 'Dr. Principal', email: 'principal@iaoms.edu', role: 'Principal', status: 'accepted', isRequired: true, canEdit: false },
+            { id: 'registrar-001', name: 'Prof. Registrar', email: 'registrar@iaoms.edu', role: 'Registrar', status: 'accepted', isRequired: true, canEdit: false },
+            { id: 'hod-cse-001', name: 'Dr. HOD-CSE', email: 'hod.cse@iaoms.edu', role: 'HOD', department: 'Computer Science', status: 'invited', isRequired: true, canEdit: false },
+            { id: 'hod-eee-001', name: 'Dr. HOD-EEE', email: 'hod.eee@iaoms.edu', role: 'HOD', department: 'Electrical Engineering', status: 'invited', isRequired: true, canEdit: false },
+            { id: 'finance-001', name: 'Mr. Finance Head', email: 'finance@iaoms.edu', role: 'Finance Head', status: 'accepted', isRequired: true, canEdit: false }
+          ],
           location: 'Auditorium',
-          type: 'in-person',
+          type: 'online',
           status: 'confirmed',
           priority: 'high',
-          organizer: 'Registrar',
-          requiresApproval: false,
-          linkedDocuments: []
+          createdBy: 'registrar-001',
+          category: 'financial',
+          isRecurring: false,
+          tags: [],
+          department: 'Administration',
+          documents: [],
+          createdAt: new Date('2024-01-12T11:00:00Z'),
+          updatedAt: new Date('2024-01-17T16:45:00Z')
         }
-      ];
+      ] as Meeting[];
 
-      // Filter meetings based on role
-      const filteredMeetings = mockMeetings.filter(meeting => {
-        if (userRole === 'employee') {
-          return meeting.attendees.includes('All Employees') || 
-                 meeting.attendees.includes(user?.department || '');
-        }
-        if (userRole === 'hod') {
-          return meeting.attendees.includes(`HOD-${user?.branch}`) ||
-                 meeting.attendees.includes('All HODs') ||
-                 meeting.organizer === `HOD-${user?.branch}`;
-        }
-        if (userRole === 'program-head') {
-          return meeting.attendees.includes('Program Heads') ||
-                 meeting.attendees.includes(`${user?.branch} Program Head`);
-        }
-        return true; // Principal and Registrar see all
-      });
+      try {
+        // Load meetings from localStorage with error handling
+        const storedMeetings = loadMeetingsFromStorage();
+        console.log(`[Calendar Widget] Loaded ${storedMeetings.length} meetings from localStorage`);
+        
+        // Combine stored meetings with mock meetings
+        const allMeetings = [...storedMeetings, ...mockMeetings];
+        
+        // Remove duplicates based on ID
+        const uniqueMeetings = allMeetings.filter((meeting, index, self) =>
+          index === self.findIndex((m) => m.id === meeting.id)
+        );
+        
+        // Apply recipient-based filtering
+        const filteredMeetings = filterMeetingsByRecipient(uniqueMeetings, user);
+        
+        console.log(`[Calendar Widget] ✅ Total meetings: ${uniqueMeetings.length}, Filtered for user: ${filteredMeetings.length}`);
 
-      setTimeout(() => {
-        setMeetings(filteredMeetings);
+        setTimeout(() => {
+          setMeetings(filteredMeetings);
+          setLoading(false);
+        }, 600);
+      } catch (error) {
+        console.error('[Calendar Widget] ❌ Error loading meetings:', error);
+        // If error, still show mock meetings
+        const filteredMockMeetings = filterMeetingsByRecipient(mockMeetings, user);
+        setMeetings(filteredMockMeetings);
         setLoading(false);
-      }, 600);
+      }
     };
 
     fetchMeetings();
-  }, [userRole, user]);
+    
+    // Listen for storage events (from MeetingScheduler)
+    const handleStorageChange = () => {
+      console.log('[Calendar Widget] Storage event detected - reloading meetings');
+      fetchMeetings();
+    };
+    
+    window.addEventListener('meetings-updated', handleStorageChange);
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('meetings-updated', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [user]);
 
   const getUpcomingMeetings = () => {
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset to midnight for accurate date comparison
+    
     return meetings
-      .filter(meeting => new Date(meeting.date) >= today)
+      .filter(meeting => {
+        const meetingDate = new Date(meeting.date);
+        meetingDate.setHours(0, 0, 0, 0); // Reset to midnight
+        
+        // Include today and future dates
+        return meetingDate >= today;
+      })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .slice(0, isMobile ? 3 : 5);
   };
@@ -171,11 +278,32 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
 
   const getStatusBadge = (status: string) => {
     const variants = {
-      confirmed: { variant: "success" as const, text: "Confirmed" },
-      pending: { variant: "warning" as const, text: "Pending Approval" },
-      cancelled: { variant: "destructive" as const, text: "Cancelled" }
+      confirmed: { 
+        variant: "success" as const, 
+        text: "Confirmed",
+        icon: <CheckCircle2 className="w-3 h-3 mr-1" />
+      },
+      pending: { 
+        variant: "warning" as const, 
+        text: "Pending Approval",
+        icon: <Clock className="w-3 h-3 mr-1" />
+      },
+      cancelled: { 
+        variant: "destructive" as const, 
+        text: "Cancelled",
+        icon: <XCircle className="w-3 h-3 mr-1" />
+      },
+      scheduled: { 
+        variant: "default" as const, 
+        text: "Scheduled",
+        icon: <CalendarIcon className="w-3 h-3 mr-1" />
+      }
     };
-    return variants[status as keyof typeof variants] || { variant: "default" as const, text: status };
+    return variants[status as keyof typeof variants] || { 
+      variant: "default" as const, 
+      text: status,
+      icon: null
+    };
   };
 
   const getPriorityColor = (priority: string) => {
@@ -190,7 +318,7 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
 
   const upcomingMeetings = getUpcomingMeetings();
   const todaysMeetings = getTodaysMeetings();
-  const pendingApprovals = meetings.filter(m => m.requiresApproval && m.status === 'pending').length;
+  const pendingApprovals = meetings.filter(m => m.status === 'scheduled').length;
 
   if (loading) {
     return (
@@ -268,7 +396,7 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
                   key={meeting.id}
                   className={cn(
                     "p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer",
-                    meeting.priority === 'emergency' && "border-destructive bg-red-50"
+                    meeting.priority === 'urgent' && "border-destructive bg-red-50"
                   )}
                   onClick={() => navigate(`/calendar/${meeting.id}`)}
                 >
@@ -290,7 +418,7 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
                       {meeting.time}
                     </div>
                     <div className="flex items-center gap-1">
-                      {meeting.type === 'virtual' ? (
+                      {meeting.type === 'online' || meeting.type === 'hybrid' ? (
                         <Video className="w-3 h-3" />
                       ) : (
                         <MapPin className="w-3 h-3" />
@@ -320,73 +448,62 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
             Upcoming Meetings
           </h4>
           
-          <div className="space-y-2">
-            {upcomingMeetings.slice(0, isMobile ? 2 : 3).map((meeting, index) => (
-              <div
-                key={meeting.id}
-                className={cn(
-                  "p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer animate-fade-in",
-                  meeting.priority === 'emergency' && "border-destructive bg-red-50",
-                  meeting.requiresApproval && "border-l-4 border-l-warning"
-                )}
-                style={{ animationDelay: `${index * 100}ms` }}
+          <div className="space-y-3">
+            {upcomingMeetings.slice(0, isMobile ? 2 : 3).map((meeting) => (
+              <div 
+                key={meeting.id} 
+                className="p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer" 
                 onClick={() => navigate(`/calendar/${meeting.id}`)}
               >
-                <div className="flex items-center justify-between mb-1">
-                  <h5 className={cn(
-                    "font-medium line-clamp-1",
-                    isMobile ? "text-sm" : "text-base"
+                {/* Match Calendar page design exactly */}
+                <div className="flex items-start justify-between mb-2">
+                  <h4 className={cn(
+                    "font-medium line-clamp-2",
+                    isMobile ? "text-sm" : "text-sm"
                   )}>
                     {meeting.title}
-                  </h5>
-                  <Badge variant={getStatusBadge(meeting.status).variant} className="text-xs">
+                  </h4>
+                  <Badge 
+                    variant={getStatusBadge(meeting.status).variant} 
+                    className="text-xs shrink-0 ml-2"
+                  >
+                    {getStatusBadge(meeting.status).icon}
                     {getStatusBadge(meeting.status).text}
                   </Badge>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                {/* Vertical layout matching Calendar page */}
+                <div className="space-y-1 text-xs text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <CalendarIcon className="w-3 h-3" />
-                    {meeting.date}
+                    {meeting.date} at {formatTime(meeting.time)}
                   </div>
                   <div className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {meeting.time}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {meeting.type === 'virtual' ? (
-                      <Video className="w-3 h-3" />
-                    ) : (
-                      <MapPin className="w-3 h-3" />
-                    )}
-                    <span className="truncate">{meeting.location}</span>
+                    {getTypeIcon(meeting.type)}
+                    {meeting.type === 'online' ? 
+                      meetingPlatforms.find(p => p.value === meeting.meetingLinks?.primary)?.label || 'Online' 
+                      : meeting.location}
                   </div>
                   <div className="flex items-center gap-1">
                     <Users className="w-3 h-3" />
                     {meeting.attendees.length} attendees
                   </div>
                 </div>
-
-                {/* Approval Required */}
-                {meeting.requiresApproval && (
-                  <div className="flex items-center gap-2 mt-2 p-2 bg-warning/10 rounded border border-warning/20">
-                    <Bell className="w-3 h-3 text-warning" />
-                    <span className="text-xs font-medium text-warning">
-                      Approval Required
-                    </span>
-                  </div>
-                )}
-
-                {/* Linked Documents */}
-                {meeting.linkedDocuments.length > 0 && (
-                  <div className="flex items-center gap-1 mt-2">
-                    <span className="text-xs text-muted-foreground">Linked:</span>
-                    {meeting.linkedDocuments.map((docId, idx) => (
-                      <Badge key={idx} variant="outline" className="text-xs">
-                        {docId}
-                      </Badge>
-                    ))}
-                  </div>
+                
+                {/* Join Meeting Button - matching Calendar page */}
+                {(meeting.type === 'online' || meeting.type === 'hybrid') && meeting.meetingLinks && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full mt-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleJoinMeeting(meeting);
+                    }}
+                  >
+                    <Video className="w-3 h-3 mr-1" />
+                    Join Meeting
+                  </Button>
                 )}
               </div>
             ))}
@@ -440,7 +557,7 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({
                     <div className="flex justify-center">
                       <div className={cn(
                         "w-1 h-1 rounded-full",
-                        dayMeetings.some(m => m.priority === 'emergency') ? "bg-red-500" :
+                        dayMeetings.some(m => m.priority === 'urgent') ? "bg-red-500" :
                         dayMeetings.some(m => m.priority === 'high') ? "bg-orange-500" : "bg-blue-500"
                       )} />
                     </div>
