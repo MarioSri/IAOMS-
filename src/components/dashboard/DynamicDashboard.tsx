@@ -15,7 +15,7 @@ import { CalendarWidget } from './widgets/CalendarWidget';
 import { NotificationsWidget } from './widgets/NotificationsWidget';
 import { AnalyticsWidget } from './widgets/AnalyticsWidget';
 
-import { AIWidget } from './widgets/AIWidget';
+
 
 import {
   Settings,
@@ -43,7 +43,7 @@ export const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ className })
   // Supported widget types - only these will be rendered
   const supportedWidgetTypes = [
     'quickActions', 'documents', 'calendar', 'notifications', 
-    'analytics', 'ai'
+    'analytics'
   ];
 
   useEffect(() => {
@@ -149,14 +149,7 @@ export const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ className })
         permissions: ['canViewAnalytics']
       },
 
-      {
-        id: 'ai',
-        type: 'ai',
-        title: 'AI Assistant',
-        position: { x: 0, y: 7, w: 12, h: 2 },
-        visible: config.permissions.canAccessAI,
-        permissions: ['canAccessAI']
-      }
+
     ];
 
     const filteredWidgets = defaultWidgets.filter(widget => {
@@ -203,8 +196,7 @@ export const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ className })
         case 'analytics':
           return <AnalyticsWidget {...widgetProps} />;
 
-        case 'ai':
-          return <AIWidget {...widgetProps} />;
+
         default:
           return <div>Unknown widget type: {widget.type}</div>;
       }

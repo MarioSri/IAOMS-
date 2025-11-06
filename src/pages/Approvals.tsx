@@ -106,16 +106,26 @@ const Approvals = () => {
       }
     };
     
+    // Listen for shared comment updates
+    const handleSharedCommentUpdate = (event: any) => {
+      console.log('🔄 Shared comment update received:', event.detail);
+      // Reload shared comments from localStorage to get latest updates
+      const updatedSharedComments = JSON.parse(localStorage.getItem('shared-comments') || '{}');
+      setSharedComments(updatedSharedComments);
+    };
+    
     window.addEventListener('document-approval-created', handleDocumentApprovalCreated);
     window.addEventListener('approval-card-created', handleDocumentApprovalCreated);
     window.addEventListener('emergency-document-created', handleDocumentApprovalCreated);
     window.addEventListener('document-submitted', handleDocumentApprovalCreated);
+    window.addEventListener('shared-comment-updated', handleSharedCommentUpdate);
     
     return () => {
       window.removeEventListener('document-approval-created', handleDocumentApprovalCreated);
       window.removeEventListener('approval-card-created', handleDocumentApprovalCreated);
       window.removeEventListener('emergency-document-created', handleDocumentApprovalCreated);
       window.removeEventListener('document-submitted', handleDocumentApprovalCreated);
+      window.removeEventListener('shared-comment-updated', handleSharedCommentUpdate);
     };
   }, [user]);
 
@@ -182,14 +192,14 @@ const Approvals = () => {
       setSharedComments(newSharedComments);
       localStorage.setItem('shared-comments', JSON.stringify(newSharedComments));
       
-      // Also add to regular comments
-      handleAddComment(cardId);
+      // Clear input field after sharing
+      const clearedInputs = { ...commentInputs, [cardId]: '' };
+      setCommentInputs(clearedInputs);
+      localStorage.setItem('comment-inputs', JSON.stringify(clearedInputs));
       
       toast({
         title: "Comment Shared",
-        description: nextRecipient === 'all' 
-          ? "Your comment will be visible to all recipients." 
-          : `Your comment will be visible to the next recipient: ${nextRecipient}`,
+        description: "Your comment will be visible only to the next recipients in the approval chain.",
       });
     }
   };
@@ -217,12 +227,20 @@ const Approvals = () => {
   };
 
   const handleUndoSharedComment = (cardId: string, index: number) => {
+    const removedComment = sharedComments[cardId]?.[index];
     const newSharedComments = {
       ...sharedComments,
       [cardId]: sharedComments[cardId]?.filter((_, i) => i !== index) || []
     };
     setSharedComments(newSharedComments);
     localStorage.setItem('shared-comments', JSON.stringify(newSharedComments));
+    
+    // Trigger real-time update for next recipient's approval card
+    if (removedComment) {
+      window.dispatchEvent(new CustomEvent('shared-comment-updated', {
+        detail: { cardId, action: 'undo', comment: removedComment }
+      }));
+    }
   };
 
   const handleEditSharedComment = (cardId: string, index: number) => {
@@ -232,6 +250,11 @@ const Approvals = () => {
       setCommentInputs(newInputs);
       localStorage.setItem('comment-inputs', JSON.stringify(newInputs));
       handleUndoSharedComment(cardId, index);
+      
+      // Trigger real-time update for next recipient's approval card
+      window.dispatchEvent(new CustomEvent('shared-comment-updated', {
+        detail: { cardId, action: 'edit', comment: sharedComment }
+      }));
     }
   };
 
@@ -1718,6 +1741,65 @@ const Approvals = () => {
                               return null;
                             })()}
                             
+                            {/* Shared Comments from Previous Approvers */}
+                            {sharedComments[doc.id]?.filter(s => shouldSeeSharedComment(s.sharedFor) && s.sharedBy !== user?.name).length > 0 && (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-1">
+                                  <Share2 className="h-4 w-4 text-blue-600" />
+                                  <span className="text-sm font-medium text-blue-700">Comment Shared by Previous Recipient</span>
+                                </div>
+                                <div className="space-y-2">
+                                  {sharedComments[doc.id].filter(s => shouldSeeSharedComment(s.sharedFor) && s.sharedBy !== user?.name).map((shared, index) => (
+                                    <div key={index} className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm">
+                                      <p className="text-blue-800">{shared.comment}</p>
+                                      <p className="text-xs text-blue-600 mt-1">— {shared.sharedBy}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Your Shared Comments (above input field) */}
+                            {sharedComments[doc.id]?.filter(s => s.sharedBy === user?.name).length > 0 && (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-1">
+                                  <Share2 className="h-4 w-4 text-blue-600" />
+                                  <span className="text-sm font-medium text-blue-700">Share Comment with Next Recipient(s)</span>
+                                </div>
+                                <div className="space-y-2">
+                                  {sharedComments[doc.id].filter(s => s.sharedBy === user?.name).map((shared, index) => (
+                                    <div key={index} className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm flex justify-between items-start">
+                                      <div className="flex-1">
+                                        <p className="text-blue-800">{shared.comment}</p>
+                                      </div>
+                                      <div className="flex gap-1 ml-2">
+                                        <button 
+                                          className="px-4 py-2 bg-blue-200 rounded-full flex items-center justify-center hover:bg-blue-300 transition-colors"
+                                          onClick={() => {
+                                            const originalIndex = sharedComments[doc.id].findIndex(s => s.comment === shared.comment && s.timestamp === shared.timestamp);
+                                            handleEditSharedComment(doc.id, originalIndex);
+                                          }}
+                                          title="Edit"
+                                        >
+                                          <SquarePen className="h-4 w-4 text-blue-700" />
+                                        </button>
+                                        <button 
+                                          className="px-4 py-2 bg-blue-200 rounded-full flex items-center justify-center hover:bg-blue-300 transition-colors"
+                                          onClick={() => {
+                                            const originalIndex = sharedComments[doc.id].findIndex(s => s.comment === shared.comment && s.timestamp === shared.timestamp);
+                                            handleUndoSharedComment(doc.id, originalIndex);
+                                          }}
+                                          title="Undo"
+                                        >
+                                          <Undo2 className="h-4 w-4 text-blue-700" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            
                             {comments[doc.id]?.filter(c => c.author === user?.name).length > 0 && (
                               <div className="space-y-2">
                                 <div className="flex items-center gap-1">
@@ -1894,18 +1976,35 @@ const Approvals = () => {
                           </div>
                           
                           {/* Shared Comments from Previous Approvers */}
-                          {sharedComments['faculty-meeting']?.filter(s => shouldSeeSharedComment(s.sharedFor)).length > 0 && (
+                          {sharedComments['faculty-meeting']?.filter(s => shouldSeeSharedComment(s.sharedFor) && s.sharedBy !== user?.name).length > 0 && (
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <Share2 className="h-4 w-4 text-blue-600" />
-                                <span className="text-sm font-medium text-blue-700">Comment Shared by Previous Approver</span>
+                                <span className="text-sm font-medium text-blue-700">Comment Shared by Previous Recipient</span>
                               </div>
                               <div className="space-y-2">
-                                {sharedComments['faculty-meeting'].filter(s => shouldSeeSharedComment(s.sharedFor)).map((shared, index) => (
+                                {sharedComments['faculty-meeting'].filter(s => shouldSeeSharedComment(s.sharedFor) && s.sharedBy !== user?.name).map((shared, index) => (
+                                  <div key={index} className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm">
+                                    <p className="text-blue-800">{shared.comment}</p>
+                                    <p className="text-xs text-blue-600 mt-1">— {shared.sharedBy}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Your Shared Comments (above input field) */}
+                          {sharedComments['faculty-meeting']?.filter(s => s.sharedBy === user?.name).length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-1">
+                                <Share2 className="h-4 w-4 text-blue-600" />
+                                <span className="text-sm font-medium text-blue-700">Share Comment with Next Recipient(s)</span>
+                              </div>
+                              <div className="space-y-2">
+                                {sharedComments['faculty-meeting'].filter(s => s.sharedBy === user?.name).map((shared, index) => (
                                   <div key={index} className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm flex justify-between items-start">
                                     <div className="flex-1">
                                       <p className="text-blue-800">{shared.comment}</p>
-                                      <p className="text-xs text-blue-600 mt-1">— {shared.sharedBy}</p>
                                     </div>
                                     <div className="flex gap-1 ml-2">
                                       <button 
@@ -2131,18 +2230,35 @@ const Approvals = () => {
                           </div>
                           
                           {/* Shared Comments from Previous Approvers */}
-                          {sharedComments['budget-request']?.filter(s => shouldSeeSharedComment(s.sharedFor)).length > 0 && (
+                          {sharedComments['budget-request']?.filter(s => shouldSeeSharedComment(s.sharedFor) && s.sharedBy !== user?.name).length > 0 && (
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <Share2 className="h-4 w-4 text-blue-600" />
-                                <span className="text-sm font-medium text-blue-700">Comment Shared by Previous Approver</span>
+                                <span className="text-sm font-medium text-blue-700">Comment Shared by Previous Recipient</span>
                               </div>
                               <div className="space-y-2">
-                                {sharedComments['budget-request'].filter(s => shouldSeeSharedComment(s.sharedFor)).map((shared, index) => (
+                                {sharedComments['budget-request'].filter(s => shouldSeeSharedComment(s.sharedFor) && s.sharedBy !== user?.name).map((shared, index) => (
+                                  <div key={index} className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm">
+                                    <p className="text-blue-800">{shared.comment}</p>
+                                    <p className="text-xs text-blue-600 mt-1">— {shared.sharedBy}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Your Shared Comments (above input field) */}
+                          {sharedComments['budget-request']?.filter(s => s.sharedBy === user?.name).length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-1">
+                                <Share2 className="h-4 w-4 text-blue-600" />
+                                <span className="text-sm font-medium text-blue-700">Share Comment with Next Recipient(s)</span>
+                              </div>
+                              <div className="space-y-2">
+                                {sharedComments['budget-request'].filter(s => s.sharedBy === user?.name).map((shared, index) => (
                                   <div key={index} className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm flex justify-between items-start">
                                     <div className="flex-1">
                                       <p className="text-blue-800">{shared.comment}</p>
-                                      <p className="text-xs text-blue-600 mt-1">— {shared.sharedBy}</p>
                                     </div>
                                     <div className="flex gap-1 ml-2">
                                       <button 
@@ -2569,17 +2685,58 @@ const Approvals = () => {
                           </div>
                           
                           {/* Shared Comments from Previous Approvers */}
-                          {sharedComments['research-methodology']?.filter(s => shouldSeeSharedComment(s.sharedFor)).length > 0 && (
+                          {sharedComments['research-methodology']?.filter(s => shouldSeeSharedComment(s.sharedFor) && s.sharedBy !== user?.name).length > 0 && (
                             <div className="space-y-2">
                               <div className="flex items-center gap-1">
                                 <Share2 className="h-4 w-4 text-blue-600" />
                                 <span className="text-sm font-medium text-blue-700">Comment Shared by Previous Recipient</span>
                               </div>
                               <div className="space-y-2">
-                                {sharedComments['research-methodology'].filter(s => shouldSeeSharedComment(s.sharedFor)).map((shared, index) => (
+                                {sharedComments['research-methodology'].filter(s => shouldSeeSharedComment(s.sharedFor) && s.sharedBy !== user?.name).map((shared, index) => (
                                   <div key={index} className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm">
                                     <p className="text-blue-800">{shared.comment}</p>
                                     <p className="text-xs text-blue-600 mt-1">— {shared.sharedBy}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Your Shared Comments (above input field) */}
+                          {sharedComments['research-methodology']?.filter(s => s.sharedBy === user?.name).length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-1">
+                                <Share2 className="h-4 w-4 text-blue-600" />
+                                <span className="text-sm font-medium text-blue-700">Share Comment with Next Recipient(s)</span>
+                              </div>
+                              <div className="space-y-2">
+                                {sharedComments['research-methodology'].filter(s => s.sharedBy === user?.name).map((shared, index) => (
+                                  <div key={index} className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm flex justify-between items-start">
+                                    <div className="flex-1">
+                                      <p className="text-blue-800">{shared.comment}</p>
+                                    </div>
+                                    <div className="flex gap-1 ml-2">
+                                      <button 
+                                        className="px-4 py-2 bg-blue-200 rounded-full flex items-center justify-center hover:bg-blue-300 transition-colors"
+                                        onClick={() => {
+                                          const originalIndex = sharedComments['research-methodology'].findIndex(s => s.comment === shared.comment && s.timestamp === shared.timestamp);
+                                          handleEditSharedComment('research-methodology', originalIndex);
+                                        }}
+                                        title="Edit"
+                                      >
+                                        <SquarePen className="h-4 w-4 text-blue-700" />
+                                      </button>
+                                      <button 
+                                        className="px-4 py-2 bg-blue-200 rounded-full flex items-center justify-center hover:bg-blue-300 transition-colors"
+                                        onClick={() => {
+                                          const originalIndex = sharedComments['research-methodology'].findIndex(s => s.comment === shared.comment && s.timestamp === shared.timestamp);
+                                          handleUndoSharedComment('research-methodology', originalIndex);
+                                        }}
+                                        title="Undo"
+                                      >
+                                        <Undo2 className="h-4 w-4 text-blue-700" />
+                                      </button>
+                                    </div>
                                   </div>
                                 ))}
                               </div>

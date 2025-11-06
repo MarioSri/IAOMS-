@@ -22,7 +22,6 @@ export const roleConfigs: Record<string, RoleConfig> = {
       canViewAllDepartments: true,
       canEscalateDocuments: true,
       canOverrideApprovals: true,
-      canAccessAI: false,
       canManageUsers: true,
       departments: ['All'],
       branches: branches,
@@ -74,7 +73,6 @@ export const roleConfigs: Record<string, RoleConfig> = {
       canViewAllDepartments: true,
       canEscalateDocuments: true,
       canOverrideApprovals: false,
-      canAccessAI: false,
       canManageUsers: false,
       departments: ['All'],
       branches: branches,
@@ -126,7 +124,6 @@ export const roleConfigs: Record<string, RoleConfig> = {
       canViewAllDepartments: false,
       canEscalateDocuments: true,
       canOverrideApprovals: false,
-      canAccessAI: false,
       canManageUsers: false,
       departments: [], // Set based on user's department
       branches: [], // Set based on user's branch
@@ -178,7 +175,6 @@ export const roleConfigs: Record<string, RoleConfig> = {
       canViewAllDepartments: false,
       canEscalateDocuments: true,
       canOverrideApprovals: false,
-      canAccessAI: false,
       canManageUsers: false,
       departments: [], // Set based on user's department
       branches: [], // Set based on user's branch
@@ -230,7 +226,6 @@ export const roleConfigs: Record<string, RoleConfig> = {
       canViewAllDepartments: false,
       canEscalateDocuments: false,
       canOverrideApprovals: false,
-      canAccessAI: false,
       canManageUsers: false,
       departments: [], // Set based on user's department
       branches: [], // Set based on user's branch

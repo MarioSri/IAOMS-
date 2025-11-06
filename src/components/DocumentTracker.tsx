@@ -886,7 +886,7 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
                     </div>
                   )}
 
-                  {/* Comments */}
+                  {/* Comments (excluding shared comments) */}
                   {((document.comments && document.comments.length > 0) || (approvalComments[document.id] && approvalComments[document.id].length > 0)) && (
                     <div className="space-y-2">
                       <div className="flex items-center gap-1">
@@ -903,7 +903,7 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
                           <p>{comment.message}</p>
                         </div>
                       ))}
-                      {/* Approval comments from Approval Center */}
+                      {/* Approval comments from Approval Center (Send Comment only, not shared comments) */}
                       {approvalComments[document.id] && approvalComments[document.id].map((comment, index) => (
                         <div key={`approval-${index}`} className="bg-muted p-3 rounded text-sm">
                           <div className="flex justify-between items-center mb-1">

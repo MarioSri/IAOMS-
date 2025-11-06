@@ -8,7 +8,7 @@ export interface DashboardConfig {
 
 export interface DashboardWidget {
   id: string;
-  type: 'documents' | 'calendar' | 'notifications' | 'analytics' | 'quickActions' | 'workflow' | 'ai';
+  type: 'documents' | 'calendar' | 'notifications' | 'analytics' | 'quickActions' | 'workflow';
   title: string;
   position: { x: number; y: number; w: number; h: number };
   visible: boolean;
@@ -47,7 +47,7 @@ export interface UserPermissions {
   canViewAllDepartments: boolean;
   canEscalateDocuments: boolean;
   canOverrideApprovals: boolean;
-  canAccessAI: boolean;
+
   canManageUsers: boolean;
   departments: string[];
   branches: string[];
