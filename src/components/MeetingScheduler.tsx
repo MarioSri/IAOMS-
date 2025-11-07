@@ -266,7 +266,7 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
           attendees: [
             { id: "1", name: "Dr. Principal", email: "principal@iaoms.edu", role: "Principal", status: "accepted", isRequired: true, canEdit: false },
             { id: "2", name: "Prof. Registrar", email: "registrar@iaoms.edu", role: "Registrar", status: "accepted", isRequired: true, canEdit: false },
-            { id: "3", name: "Dr. HOD-CSE", email: "hod.cse@iaoms.edu", role: "HOD", department: "Computer Science", status: "no-response" as const, isRequired: true, canEdit: true }
+            { id: "3", name: "Dr. HOD-CSE", email: "hod.cse@iaoms.edu", role: "HOD", department: "Computer Science", status: "accepted" as const, isRequired: true, canEdit: true }
           ],
           location: "google-meet",
           type: "online",
@@ -341,7 +341,7 @@ export function MeetingScheduler({ userRole, className }: MeetingSchedulerProps)
           attendees: [
             { id: "1", name: "Dr. Principal", email: "principal@iaoms.edu", role: "Principal", status: "accepted", isRequired: true, canEdit: false },
             { id: "4", name: "Mr. Finance Head", email: "finance@iaoms.edu", role: "Finance Head", status: "accepted", isRequired: true, canEdit: false },
-            { id: "2", name: "Prof. Registrar", email: "registrar@iaoms.edu", role: "Registrar", status: "tentative", isRequired: true, canEdit: false }
+            { id: "2", name: "Prof. Registrar", email: "registrar@iaoms.edu", role: "Registrar", status: "no-response", isRequired: true, canEdit: false }
           ],
           location: "zoom",
           type: "online",

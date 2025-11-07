@@ -444,12 +444,13 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
           const updatedSubmittedDocs = submittedDocs.map((doc: any) => {
             if (doc.id === document.id) {
               console.log('✅ Updating Track Document with signature metadata');
+              const updatedSignedBy = [...(doc.signedBy || []), user.name];
               return {
                 ...doc,
                 signatureMetadata: signatureMetadata,
-                signedBy: [...(doc.signedBy || []), user.name],
+                signedBy: updatedSignedBy,
                 lastSignedDate: new Date().toISOString().split('T')[0],
-                signatureCount: (doc.signatureCount || 0) + placedSignatures.length,
+                signatureCount: updatedSignedBy.length, // 🆕 Update signature count for dynamic tracking
                 hasDynamicSignatures: true // Flag to regenerate signed version on view
               };
             }
@@ -472,12 +473,13 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
           const updatedApprovals = pendingApprovals.map((approval: any) => {
             if (approval.id === document.id) {
               console.log('✅ Updating Approval Center with signature metadata');
+              const updatedSignedBy = [...(approval.signedBy || []), user.name];
               return {
                 ...approval,
                 signatureMetadata: signatureMetadata,
-                signedBy: [...(approval.signedBy || []), user.name],
+                signedBy: updatedSignedBy,
                 lastSignedDate: new Date().toISOString().split('T')[0],
-                signatureCount: (approval.signatureCount || 0) + placedSignatures.length,
+                signatureCount: updatedSignedBy.length, // 🆕 Update signature count for dynamic tracking
                 hasDynamicSignatures: true // Flag to regenerate signed version on view
               };
             }
@@ -489,14 +491,40 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
           console.error('⚠️ LocalStorage quota exceeded for pending-approvals:', quotaError);
         }
         
-        // Dispatch events for real-time updates
-        console.log('📢 Dispatching document-signed event');
+        // Calculate recipient counts for dynamic tracking
+        const submittedDocs = JSON.parse(localStorage.getItem('submitted-documents') || '[]');
+        const currentDoc = submittedDocs.find((doc: any) => doc.id === document.id);
+        const totalRecipients = currentDoc?.workflow?.steps?.filter((step: any) => 
+          step.name !== 'Submission' && step.assignee !== currentDoc.submittedBy
+        ).length || 1;
+        const currentSignedCount = (currentDoc?.signedBy?.length || 0) + 1; // +1 for current signature
+        
+        // Dispatch events for real-time updates with tracking data
+        console.log('📢 Dispatching document-signed event with tracking data:', {
+          documentId: document.id,
+          signerName: user.name,
+          totalSigned: currentSignedCount,
+          totalRecipients: totalRecipients
+        });
+        
         window.dispatchEvent(new CustomEvent('document-signed', {
           detail: {
             documentId: document.id,
             signedFiles: signedFiles,
-            signedBy: user.name,
-            signatureCount: placedSignatures.length
+            signerName: user.name,
+            signatureCount: placedSignatures.length,
+            totalSigned: currentSignedCount,
+            totalRecipients: totalRecipients
+          }
+        }));
+        
+        // Also dispatch Documenso-specific event for compatibility
+        window.dispatchEvent(new CustomEvent('documenso-signature-completed', {
+          detail: {
+            documentId: document.id,
+            signerName: user.name,
+            totalSigned: currentSignedCount,
+            totalRecipients: totalRecipients
           }
         }));
         
@@ -512,7 +540,8 @@ export const DocumensoIntegration: React.FC<DocumensoIntegrationProps> = ({
       
       toast({
         title: "Document Signed Successfully",
-        description: `${document.title} has been digitally signed and updated in Track Documents and Approval Center.`,
+        description: `✅ Signed by ${currentSignedCount} Recipient${currentSignedCount > 1 ? 's' : ''} • ${currentSignedCount} Signature${currentSignedCount > 1 ? 's' : ''}`,
+        duration: 5000,
       });
       
     } catch (error) {

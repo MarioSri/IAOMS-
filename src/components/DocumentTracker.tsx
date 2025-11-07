@@ -26,10 +26,12 @@ import {
   FileClock,
   Trash2,
   ArrowRight,
+  ArrowRightLeft,
   Building,
   CircleCheckBig,
   Siren,
-  Users
+  Users,
+  Upload
 } from "lucide-react";
 import { DigitalSignature } from "./DigitalSignature";
 import { useToast } from "@/hooks/use-toast";
@@ -54,12 +56,17 @@ interface Document {
     progress: number;
     steps: Array<{
       name: string;
-      status: 'completed' | 'current' | 'pending' | 'rejected' | 'cancelled';
+      status: 'completed' | 'current' | 'pending' | 'rejected' | 'cancelled' | 'bypassed';
       assignee: string;
       completedDate?: string;
       rejectedBy?: string;
       rejectedDate?: string;
     }>;
+    routingType?: 'sequential' | 'parallel' | 'reverse' | 'bidirectional';
+    bypassedRecipients?: string[];
+    resubmittedRecipients?: string[];
+    hasBypass?: boolean; // For Emergency Management compatibility
+    isParallel?: boolean; // For Emergency Management compatibility
   };
   requiresSignature: boolean;
   signedBy?: string[];
@@ -347,13 +354,36 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
     // Listen for document signature events
     const handleDocumentSigned = (event: any) => {
       console.log('🖊️ [Track Documents] Document signed event received:', event.detail);
+      
+      const { documentId, signerName, totalSigned, totalRecipients } = event.detail;
+      
+      // Update the document in state immediately for real-time feedback
+      setSubmittedDocuments(prev => prev.map(doc => {
+        if (doc.id === documentId) {
+          const updatedSignedBy = doc.signedBy ? [...doc.signedBy] : [];
+          if (signerName && !updatedSignedBy.includes(signerName)) {
+            updatedSignedBy.push(signerName);
+          }
+          return {
+            ...doc,
+            signedBy: updatedSignedBy,
+            signatureCount: updatedSignedBy.length // Update signature count for tracking
+          };
+        }
+        return doc;
+      }));
+      
+      // Also reload from localStorage to ensure consistency
       loadSubmittedDocuments();
       
-      if (event.detail?.documentId) {
+      if (documentId) {
+        const signedCount = totalSigned || 1;
+        const totalCount = totalRecipients || 1;
+        
         toast({
           title: "Document Signed",
-          description: `Document has been digitally signed and updated`,
-          duration: 3000,
+          description: `✅ Signed by ${signedCount} Recipient${signedCount > 1 ? 's' : ''} • ${signedCount} Signature${signedCount > 1 ? 's' : ''}`,
+          duration: 4000,
         });
       }
     };
@@ -365,6 +395,7 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
     window.addEventListener('approval-card-created', handleDocumentSubmitted);
     window.addEventListener('document-submitted', handleDocumentSubmitted);
     window.addEventListener('document-signed', handleDocumentSigned);
+    window.addEventListener('documenso-signature-completed', handleDocumentSigned);
     
     window.addEventListener('storage', handleStorageChange);
     return () => {
@@ -376,6 +407,7 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
       window.removeEventListener('approval-card-created', handleDocumentSubmitted);
       window.removeEventListener('document-submitted', handleDocumentSubmitted);
       window.removeEventListener('document-signed', handleDocumentSigned);
+      window.removeEventListener('documenso-signature-completed', handleDocumentSigned);
     };
   }, []);
 
@@ -800,6 +832,8 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
                       <div key={index} className="flex items-center gap-2 text-sm">
                         {/* Show red X for rejected steps */}
                         {step.status === 'rejected' && <XCircle className="h-4 w-4 text-red-600" />}
+                        {/* 🆕 Show red X for bypassed steps (Approval Chain with Bypass) */}
+                        {step.status === 'bypassed' && <XCircle className="h-4 w-4 text-red-600" />}
                         {/* Show gray circle-slash for cancelled steps */}
                         {step.status === 'cancelled' && <div className="h-4 w-4 rounded-full border-2 border-gray-400 flex items-center justify-center"><span className="text-gray-400 text-xs">✕</span></div>}
                         {/* Demo cards specific icons */}
@@ -823,7 +857,22 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
                                 Escalated {(step as any).escalationLevel}x
                               </Badge>
                             )}
-                            {/* Rejected with bypass indicator */}
+                            {/* 🆕 Bypassed status for Approval Chain with Bypass */}
+                            {step.status === 'bypassed' && (
+                              <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-300">
+                                BYPASS
+                              </Badge>
+                            )}
+                            {/* 🆕 Re-Submitted status for Bi-Directional Routing */}
+                            {document.workflow?.resubmittedRecipients && 
+                             document.workflow.resubmittedRecipients.some((name: string) => 
+                               step.assignee.toLowerCase().includes(name.toLowerCase())
+                             ) && (
+                              <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-300">
+                                Re-Submitted
+                              </Badge>
+                            )}
+                            {/* Rejected with bypass indicator (Emergency Management) */}
                             {step.status === 'rejected' && document.workflow?.hasBypass && (
                               <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-300">
                                 BYPASS
@@ -851,21 +900,36 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
                   {document.requiresSignature && (
                     <div className="flex items-center gap-2 text-sm">
                       <Signature className="h-4 w-4" />
-                      {document.signedBy && document.signedBy.length > 0 ? (
-                        <>
-                          <span>{isEmergency ? 'Signed by Recipient' : `Signed by ${document.signedBy.length} Recipient${document.signedBy.length > 1 ? 's' : ''}`}</span>
-                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-                            {isEmergency ? 'Signature' : `${document.signedBy.length} Signature${document.signedBy.length > 1 ? 's' : ''}`}
-                          </Badge>
-                        </>
-                      ) : (
-                        <>
-                          <span>Signed by Recipients</span>
-                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-                            Signature
-                          </Badge>
-                        </>
-                      )}
+                      {(() => {
+                        const currentSignedCount = document.signedBy?.length || 0;
+                        const totalRecipients = (document as any).totalRecipients || 
+                          document.workflow.steps.filter(step => 
+                            step.name !== 'Submission' && step.assignee !== document.submittedBy
+                          ).length;
+                        
+                        if (currentSignedCount > 0) {
+                          return (
+                            <>
+                              <span className="flex items-center gap-1">
+                                <CheckCircle className="h-4 w-4 text-green-600" />
+                                {`Signed by ${currentSignedCount} Recipient${currentSignedCount !== 1 ? 's' : ''}`}
+                              </span>
+                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                {`${currentSignedCount} Signature${currentSignedCount !== 1 ? 's' : ''}`}
+                              </Badge>
+                            </>
+                          );
+                        } else {
+                          return (
+                            <>
+                              <span>Signed by Recipients</span>
+                              <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-300">
+                                Signatures
+                              </Badge>
+                            </>
+                          );
+                        }
+                      })()}
                     </div>
                   )}
 
@@ -1146,6 +1210,192 @@ export const DocumentTracker: React.FC<DocumentTrackerProps> = ({ userRole, onVi
                     Download
                   </Button>
 
+                  {/* 🆕 Bi-Directional Routing: Resend & Re-Upload Buttons */}
+                  {(() => {
+                    const isBidirectional = (document as any).routingType === 'bidirectional';
+                    const hasBypassedRecipients = (document as any).workflow?.bypassedRecipients?.length > 0;
+                    const isOwner = document.submittedBy === currentUserProfile.name || 
+                                   document.submittedBy === userRole ||
+                                   (document as any).submittedByDesignation === userRole ||
+                                   (document as any).submittedByDesignation === currentUserProfile.designation;
+                    
+                    console.log('🔍 [Bi-Directional Buttons Check]:', {
+                      title: document.title,
+                      routingType: (document as any).routingType,
+                      isBidirectional,
+                      bypassedRecipients: (document as any).workflow?.bypassedRecipients,
+                      hasBypassedRecipients,
+                      submittedBy: document.submittedBy,
+                      currentUser: currentUserProfile.name,
+                      userRole,
+                      isOwner,
+                      showButtons: isBidirectional && hasBypassedRecipients && isOwner
+                    });
+                    
+                    return isBidirectional && hasBypassedRecipients && isOwner;
+                  })() && (
+                    <>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700"
+                        onClick={() => {
+                          // Resend to bypassed recipients
+                          const bypassedRecipients = (document as any).workflow.bypassedRecipients;
+                          console.log('🔄 Resending to bypassed recipients:', bypassedRecipients);
+                          
+                          if (bypassedRecipients && bypassedRecipients.length > 0) {
+                            // Update workflow to mark bypassed recipients as current again
+                            const submittedDocs = JSON.parse(localStorage.getItem('submitted-documents') || '[]');
+                            const updatedDocs = submittedDocs.map((doc: any) => {
+                              if (doc.id === document.id) {
+                                const updatedSteps = doc.workflow.steps.map((step: any) => {
+                                  // Only reset bypassed steps to current
+                                  if (step.status === 'bypassed') {
+                                    return { ...step, status: 'current' };
+                                  }
+                                  return step;
+                                });
+                                
+                                return {
+                                  ...doc,
+                                  workflow: {
+                                    ...doc.workflow,
+                                    steps: updatedSteps,
+                                    resubmittedRecipients: [...(doc.workflow.resubmittedRecipients || []), ...bypassedRecipients],
+                                    bypassedRecipients: [] // Clear bypassed list after resending
+                                  }
+                                };
+                              }
+                              return doc;
+                            });
+                            
+                            localStorage.setItem('submitted-documents', JSON.stringify(updatedDocs));
+                            
+                            // 🆕 Update approval cards in localStorage and dispatch event
+                            const approvalCards = JSON.parse(localStorage.getItem('pending-approvals') || '[]');
+                            localStorage.setItem('pending-approvals', JSON.stringify(approvalCards)); // Keep cards for rejected recipients
+                            
+                            // 🆕 Dispatch event to notify Approval Center to refresh
+                            window.dispatchEvent(new CustomEvent('approval-card-updated', {
+                              detail: {
+                                docId: document.id,
+                                action: 'resubmitted',
+                                routingType: 'bidirectional'
+                              }
+                            }));
+                            
+                            // Trigger reload
+                            window.dispatchEvent(new CustomEvent('workflow-updated'));
+                            setSubmittedDocuments(updatedDocs);
+                            
+                            toast({
+                              title: "Document Resent",
+                              description: `✅ Approval card resent to ${bypassedRecipients.length} recipient(s) who rejected.`,
+                              duration: 4000,
+                            });
+                          } else {
+                            toast({
+                              title: "No Recipients",
+                              description: "No rejected recipients to resend to.",
+                              variant: "destructive"
+                            });
+                          }
+                        }}
+                      >
+                        <ArrowRight className="h-4 w-4 mr-2" />
+                        Resend
+                      </Button>
+                      
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="bg-purple-50 hover:bg-purple-100 border-purple-300 text-purple-700"
+                        onClick={() => {
+                          // Open file upload dialog
+                          const fileInput = window.document.createElement('input');
+                          fileInput.type = 'file';
+                          fileInput.multiple = true;
+                          fileInput.accept = '.pdf,.doc,.docx,.xlsx,.xls,.png,.jpg,.jpeg';
+                          
+                          fileInput.onchange = async (e: any) => {
+                            const files = Array.from(e.target.files || []) as File[];
+                            
+                            if (files.length > 0) {
+                              console.log('📤 Re-uploading files:', files.map(f => f.name));
+                              
+                              // Convert files to base64
+                              const convertFilesToBase64 = async (files: File[]) => {
+                                const filePromises = files.map(file => {
+                                  return new Promise((resolve) => {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => {
+                                      resolve({
+                                        name: file.name,
+                                        size: file.size,
+                                        type: file.type,
+                                        data: reader.result as string
+                                      });
+                                    };
+                                    reader.readAsDataURL(file);
+                                  });
+                                });
+                                return Promise.all(filePromises);
+                              };
+                              
+                              const serializedFiles = await convertFilesToBase64(files);
+                              
+                              // Update document with new files
+                              const submittedDocs = JSON.parse(localStorage.getItem('submitted-documents') || '[]');
+                              const updatedDocs = submittedDocs.map((doc: any) => {
+                                if (doc.id === document.id) {
+                                  return { ...doc, files: serializedFiles };
+                                }
+                                return doc;
+                              });
+                              
+                              localStorage.setItem('submitted-documents', JSON.stringify(updatedDocs));
+                              
+                              // Update approval cards
+                              const approvalCards = JSON.parse(localStorage.getItem('pending-approvals') || '[]');
+                              const updatedApprovals = approvalCards.map((card: any) => {
+                                if (card.id === document.id || card.trackingCardId === document.id) {
+                                  return { ...card, files: serializedFiles };
+                                }
+                                return card;
+                              });
+                              
+                              localStorage.setItem('pending-approvals', JSON.stringify(updatedApprovals));
+                              
+                              // 🆕 Dispatch event to notify Approval Center
+                              window.dispatchEvent(new CustomEvent('approval-card-updated', {
+                                detail: {
+                                  docId: document.id,
+                                  action: 'files-updated',
+                                  routingType: 'bidirectional'
+                                }
+                              }));
+                              
+                              // Reload
+                              window.dispatchEvent(new CustomEvent('workflow-updated'));
+                              setSubmittedDocuments(updatedDocs);
+                              
+                              toast({
+                                title: "Document Updated",
+                                description: `✅ ${files.length} file(s) uploaded. Click Resend to send to rejected recipients.`,
+                                duration: 4000,
+                              });
+                            }
+                          };
+                          
+                          fileInput.click();
+                        }}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Re-Upload Document
+                      </Button>
+                    </>
+                  )}
 
                   
                   {userRole === 'Principal' || userRole === 'Registrar' || userRole === 'HOD' ? (

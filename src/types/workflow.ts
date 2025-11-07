@@ -17,7 +17,7 @@ export interface WorkflowRoute {
   id: string;
   name: string;
   description: string; // For UI compatibility
-  type: 'sequential' | 'parallel'; // For UI compatibility
+  type: 'sequential' | 'parallel' | 'reverse' | 'bidirectional'; // For UI compatibility - Added reverse and bidirectional
   documentType: 'academic' | 'administrative' | 'financial' | 'general';
   department?: string;
   branch?: string;

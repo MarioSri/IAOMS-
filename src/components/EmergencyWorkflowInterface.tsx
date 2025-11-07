@@ -1246,14 +1246,14 @@ export const EmergencyWorkflowInterface: React.FC<EmergencyWorkflowInterfaceProp
                   checked={emergencyData.autoEscalation || false}
                   onCheckedChange={(checked) => setEmergencyData({...emergencyData, autoEscalation: checked})}
                 />
-                <label className="text-sm font-medium">Auto-Escalation</label>
+                <label className="text-sm font-medium">Auto-Forward</label>
               </div>
             </div>
             
             {emergencyData.autoEscalation && (
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium">Escalation Timeout</label>
+                  <label className="text-sm font-medium">Auto-Forward Timeout</label>
                   <Input
                     type="number"
                     value={emergencyData.escalationTimeout || 24}

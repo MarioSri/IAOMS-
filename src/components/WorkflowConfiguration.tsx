@@ -394,16 +394,42 @@ export const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ cl
       };
       
       // Create individual workflow steps for each recipient (like "New Course Proposal - Data Science")
+      // Behavior changes based on routing type
       const recipientSteps = selectedRecipients.map((recipientId: string, index: number) => {
         const recipientName = getRecipientName(recipientId);
         const stepName = getStepNameFromRecipient(recipientId);
         
+        // 🆕 Determine step status based on routing type
+        let status = 'pending';
+        
+        if (workflowType === 'sequential') {
+          // Sequential: Only first recipient is current, rest are pending
+          status = index === 0 ? 'current' : 'pending';
+        } else if (workflowType === 'parallel' || workflowType === 'bidirectional') {
+          // Parallel/Bi-Directional: All recipients are current (receive simultaneously)
+          status = 'current';
+        } else if (workflowType === 'reverse') {
+          // Reverse: Start from highest authority (last in selected list)
+          // Reverse the order so highest authority is first
+          const reversedIndex = selectedRecipients.length - 1 - index;
+          status = reversedIndex === 0 ? 'current' : 'pending';
+        }
+        
         return {
           name: stepName,
-          status: index === 0 ? 'current' : 'pending', // First recipient is current, others are pending
-          assignee: recipientName
+          status: status,
+          assignee: recipientName,
+          recipientId: recipientId // 🆕 Store for matching
         };
       });
+      
+      // 🆕 For reverse routing, reverse the order of steps
+      const finalRecipientSteps = workflowType === 'reverse' 
+        ? [...recipientSteps].reverse() 
+        : recipientSteps;
+      
+      // Calculate total recipients for signature tracking (excluding submitter)
+      const totalRecipients = selectedRecipients.length;
       
       // Create tracking card data following the exact same layout as "New Course Proposal – Data Science"
       const trackingCard = {
@@ -419,22 +445,30 @@ export const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ cl
                  documentPriority === 'medium' ? 'Medium Priority' :
                  documentPriority === 'high' ? 'High Priority' : 'Urgent Priority',
         workflow: {
-          currentStep: selectedRecipients.length > 0 ? recipientSteps[0].name : 'Complete',
+          currentStep: selectedRecipients.length > 0 ? finalRecipientSteps[0].name : 'Complete',
           progress: 0,
+          routingType: workflowType, // 🆕 Store routing type
           steps: [
             { name: 'Submission', status: 'completed', assignee: currentUserName, completedDate: new Date().toISOString().split('T')[0] },
             ...(selectedRecipients.length > 0 
-              ? recipientSteps // Individual steps for each recipient like demo card
+              ? finalRecipientSteps // Individual steps for each recipient like demo card
               : [{ name: 'Bypass Approval', status: 'completed', assignee: 'System', completedDate: new Date().toISOString().split('T')[0] }]
             )
-          ]
+          ],
+          bypassedRecipients: [], // 🆕 Track bypassed recipients (rejected but continued)
+          resubmittedRecipients: [] // 🆕 Track re-submitted recipients (for bi-directional)
         },
         requiresSignature: true,
-        signedBy: [currentUserName],
+        signedBy: [], // 🆕 Start with empty array - recipients will be added as they sign
+        totalRecipients: totalRecipients, // 🆕 Store total recipient count for signature tracking
+        signatureCount: 0, // 🆕 Start at 0 - will increment as recipients sign
         description: documentDescription,
         recipients: recipientNames, // Display names for UI
         recipientIds: selectedRecipients, // Original IDs for matching
         files: serializedFiles,
+        fileAssignments: documentAssignments, // 🆕 Store file-to-recipient assignments
+        routingType: workflowType, // 🆕 Add routing type to card
+        source: 'approval-chain-bypass', // 🆕 Identify source
         comments: []
       };
       
@@ -561,7 +595,11 @@ export const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ cl
           description: documentDescription,
           recipients: selectedRecipients.map((id: string) => getRecipientName(id)), // Display names for UI
           recipientIds: selectedRecipients, // Original IDs for matching
-          files: serializedFiles
+          files: serializedFiles,
+          fileAssignments: documentAssignments, // 🆕 Store file-to-recipient assignments for filtering
+          routingType: workflowType, // 🆕 Add routing type: sequential, parallel, reverse, bidirectional
+          trackingCardId: trackingCard.id, // Link to tracking card for workflow updates
+          source: 'approval-chain-bypass' // Identify source for filtering
         };
         
         // Save to localStorage for approvals with quota management
