@@ -647,6 +647,43 @@ export const WorkflowConfiguration: React.FC<WorkflowConfigurationProps> = ({ cl
           detail: { approval: approvalCard }
         }));
         
+        // 🔔 SEND NOTIFICATIONS BASED ON RECIPIENTS' PROFILE SETTINGS
+        console.log('🔔 [Notification] Sending notifications to selected recipients based on their profile preferences...');
+        
+        if (selectedRecipients.length > 0) {
+          const { ExternalNotificationDispatcher } = await import('@/services/ExternalNotificationDispatcher');
+          
+          for (const recipientId of selectedRecipients) {
+            const recipientName = getRecipientName(recipientId);
+            
+            console.log(`📬 [Notification] Processing notifications for: ${recipientName} (${recipientId})`);
+            
+            // Send notification based on recipient's profile settings
+            ExternalNotificationDispatcher.notifyRecipient(
+              recipientId,
+              recipientName,
+              {
+                type: 'approval',
+                documentTitle: documentTitle,
+                submitter: currentUserName,
+                priority: documentPriority,
+                approvalCenterLink: `${window.location.origin}/approvals#${approvalCard.id}`,
+                recipientName: recipientName
+              }
+            ).then((result) => {
+              if (result.success) {
+                console.log(`✅ [Notification] Successfully notified ${recipientName} via: ${result.channels.join(', ')}`);
+              } else {
+                console.warn(`⚠️ [Notification] No notifications sent to ${recipientName} (preferences may be disabled)`);
+              }
+            }).catch((error) => {
+              console.error(`❌ [Notification] Error notifying ${recipientName}:`, error);
+            });
+          }
+          
+          console.log('✅ [Notification] All recipient notifications processed based on their profile preferences');
+        }
+        
         // 🆕 AUTO-CREATE CHANNEL using ChannelAutoCreationService
         console.log('📢 Auto-creating channel for Approval Chain with Bypass submission...');
         

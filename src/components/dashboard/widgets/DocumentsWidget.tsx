@@ -40,6 +40,7 @@ interface Document {
   requiresAction: boolean;
   escalationLevel: number;
   aiSummary?: string;
+  approvalCard?: any;  // Store reference to original approval card
 }
 
 interface DocumentsWidgetProps {
@@ -144,6 +145,32 @@ export const DocumentsWidget: React.FC<DocumentsWidgetProps> = ({
         // Get pending approvals from localStorage and static data
         const storedApprovals = JSON.parse(localStorage.getItem('pending-approvals') || '[]');
         
+        console.log('📥 [Dashboard] Loading approval cards from localStorage:', storedApprovals.length);
+        
+        // Filter approval cards for current user
+        const userApprovalCards = storedApprovals.filter((approval: any) => {
+          return isUserInRecipients(approval);
+        });
+        
+        console.log('✅ [Dashboard] User-specific approval cards:', userApprovalCards.length);
+        
+        // Convert approval cards to document format
+        const approvalDocuments: Document[] = userApprovalCards.map((approval: any) => ({
+          id: approval.id,
+          title: approval.title,
+          type: approval.type,
+          status: approval.status || 'pending',
+          submittedBy: approval.submitter,
+          submittedByRole: 'Faculty',
+          department: approval.department || 'General',
+          date: approval.submittedDate,
+          priority: approval.isEmergency ? 'emergency' : (approval.priority || 'medium'),
+          description: approval.description,
+          requiresAction: true,
+          escalationLevel: 0,
+          approvalCard: approval  // Store original approval card
+        }));
+        
         const staticPendingDocs = [
           {
             id: 'faculty-meeting',
@@ -204,7 +231,7 @@ export const DocumentsWidget: React.FC<DocumentsWidgetProps> = ({
         ];
         
         // Combine stored and static documents, then filter by recipient visibility
-        allPendingDocs = [...storedApprovals, ...staticPendingDocs].filter(doc => isUserInRecipients(doc));
+        allPendingDocs = [...approvalDocuments, ...staticPendingDocs];
       }
 
       setTimeout(() => {
@@ -215,11 +242,83 @@ export const DocumentsWidget: React.FC<DocumentsWidgetProps> = ({
 
     fetchDocuments();
     
+    // NEW: Listen for approval card creation events
+    const handleApprovalCardCreated = (event: any) => {
+      console.log('📢 [Dashboard] Approval card event received:', event.type);
+      const approval = event.detail?.approval;
+      
+      if (approval) {
+        console.log('📋 [Dashboard] New approval card:', {
+          id: approval.id,
+          title: approval.title,
+          isEmergency: approval.isEmergency,
+          recipients: approval.recipients
+        });
+        
+        // Check if current user is a recipient
+        if (isUserInRecipients(approval)) {
+          // Convert approval card to document format
+          const newDocument: Document = {
+            id: approval.id,
+            title: approval.title,
+            type: approval.type as any,
+            status: approval.status || 'pending',
+            submittedBy: approval.submitter,
+            submittedByRole: 'Faculty',
+            department: approval.department || 'General',
+            date: approval.submittedDate,
+            priority: approval.isEmergency ? 'emergency' : (approval.priority || 'medium'),
+            description: approval.description,
+            requiresAction: true,
+            escalationLevel: 0,
+            approvalCard: approval  // Store original approval card for reference
+          };
+          
+          // Add to documents state (avoid duplicates)
+          setDocuments(prev => {
+            const exists = prev.some(doc => doc.id === newDocument.id);
+            if (exists) {
+              console.log('⚠️ [Dashboard] Approval card already exists, skipping');
+              return prev;
+            }
+            console.log('✅ [Dashboard] Adding approval card to Recent Documents');
+            return [newDocument, ...prev];
+          });
+        }
+      }
+    };
+    
+    // NEW: Listen for approval card status changes (approve/reject)
+    const handleApprovalCardStatusChanged = (event: any) => {
+      console.log('📢 [Dashboard] Approval card status changed:', event.type);
+      const { docId, action, approvedBy, rejectedBy } = event.detail;
+      
+      console.log(`🔄 [Dashboard] Removing card ${docId} from Recent Documents (${action})`);
+      
+      // Remove the card from Dashboard widget
+      setDocuments(prev => prev.filter(doc => doc.id !== docId));
+      
+      if (action === 'approved') {
+        console.log(`✅ [Dashboard] Card ${docId} approved by ${approvedBy}, removed from widget`);
+      } else if (action === 'rejected') {
+        console.log(`❌ [Dashboard] Card ${docId} rejected by ${rejectedBy}, removed from widget`);
+      }
+    };
+    
     // Listen for storage changes to update in real-time
     const handleStorageChange = () => fetchDocuments();
-    window.addEventListener('storage', handleStorageChange);
     
-    return () => window.removeEventListener('storage', handleStorageChange);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('approval-card-created', handleApprovalCardCreated);
+    window.addEventListener('document-approval-created', handleApprovalCardCreated);
+    window.addEventListener('approval-card-status-changed', handleApprovalCardStatusChanged);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('approval-card-created', handleApprovalCardCreated);
+      window.removeEventListener('document-approval-created', handleApprovalCardCreated);
+      window.removeEventListener('approval-card-status-changed', handleApprovalCardStatusChanged);
+    };
   }, [userRole, user]);
 
   const getFilteredDocuments = () => {
@@ -352,13 +451,34 @@ export const DocumentsWidget: React.FC<DocumentsWidgetProps> = ({
               <div
                 key={doc.id}
                 className={cn(
-                  "p-4 border rounded-lg hover:bg-accent transition-all cursor-pointer animate-fade-in",
-                  doc.status === 'emergency' && "border-destructive bg-red-50",
+                  "relative p-4 border rounded-lg hover:bg-accent transition-all cursor-pointer animate-fade-in",
+                  doc.status === 'emergency' && "border-destructive bg-red-50 animate-pulse",
+                  doc.priority === 'emergency' && "border-destructive bg-red-50 animate-pulse",
                   doc.requiresAction && "border-l-4 border-l-warning"
                 )}
-                style={{ animationDelay: `${index * 100}ms` }}
-                onClick={() => navigate("/approvals")}
+                onClick={() => {
+                  console.log('🖱️ [Dashboard] Card clicked:', doc.id);
+                  // Navigate to Approval Center with hash to highlight card
+                  if (doc.approvalCard) {
+                    navigate(`/approvals#${doc.id}`);
+                  } else {
+                    navigate("/approvals");
+                  }
+                }}
               >
+                {/* Emergency indicator */}
+                {(doc.status === 'emergency' || doc.priority === 'emergency' || doc.approvalCard?.isEmergency) && (
+                  <>
+                    <div className="absolute top-2 right-2">
+                      <Badge variant="destructive" className="animate-pulse">
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        EMERGENCY
+                      </Badge>
+                    </div>
+                    <div className="absolute top-2 left-2 w-3 h-3 bg-red-500 rounded-full animate-ping" />
+                  </>
+                )}
+                
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1 min-w-0">
                     <h4 className={cn(
@@ -442,7 +562,14 @@ export const DocumentsWidget: React.FC<DocumentsWidgetProps> = ({
 
                 {/* Quick Actions */}
                 <div className="flex gap-2 mt-3">
-                  <Button size="sm" variant="outline" className="flex-1" onClick={() => navigate("/approvals")}>
+                  <Button size="sm" variant="outline" className="flex-1" onClick={(e) => {
+                    e.stopPropagation();
+                    if (doc.approvalCard) {
+                      navigate(`/approvals#${doc.id}`);
+                    } else {
+                      navigate("/approvals");
+                    }
+                  }}>
                     <Eye className="w-3 h-3 mr-1" />
                     View Details
                   </Button>
@@ -507,6 +634,7 @@ export const DocumentsWidget: React.FC<DocumentsWidgetProps> = ({
             setSelectedDoc(null);
           }}
           document={selectedDoc}
+          approvalCard={selectedDoc.approvalCard}
         />
       )}
     </>

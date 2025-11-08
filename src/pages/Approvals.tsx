@@ -703,7 +703,7 @@ const Approvals = () => {
                 staticPendingDocs.find(d => d.id === docId);
     
     if (doc) {
-      const currentUserName = user?.fullName || user?.name || 'Approver';
+      const currentUserName = user?.name || 'Approver';
       const currentDate = new Date().toISOString().split('T')[0];
       
       console.log(`✅ [Accept] Processing approval for: ${doc.title}`);
@@ -938,8 +938,18 @@ const Approvals = () => {
         comment: comments[docId]?.join(' ') || 'Document approved successfully.'
       };
       
-      // Add to approval history
-      setApprovalHistory(prev => [approvedDoc, ...prev]);
+      // Add to approval history state
+      setApprovalHistory(prev => {
+        const updated = [approvedDoc, ...prev];
+        // Save to localStorage for persistence
+        try {
+          localStorage.setItem('approval-history-new', JSON.stringify(updated));
+          console.log('✅ [Approval History] Saved approved document to localStorage');
+        } catch (error) {
+          console.error('❌ [Approval History] Error saving to localStorage:', error);
+        }
+        return updated;
+      });
       
       // Handle card removal based on routing type
       const isApprovalChainBypass = doc.source === 'approval-chain-bypass';
@@ -994,6 +1004,16 @@ const Approvals = () => {
         setPendingApprovals(prev => prev.filter(d => d.id !== docId));
       }
       
+      // Dispatch event to update Dashboard widget to remove approved card
+      window.dispatchEvent(new CustomEvent('approval-card-status-changed', {
+        detail: { 
+          docId,
+          action: 'approved',
+          approvedBy: currentUserName,
+          approvedDate: currentDate
+        }
+      }));
+      
       toast({
         title: "Document Signed & Approved",
         description: `${doc.title} has been signed and forwarded to the next recipient.`,
@@ -1017,7 +1037,7 @@ const Approvals = () => {
                 staticPendingDocs.find(d => d.id === docId);
     
     if (doc) {
-      const currentUserName = user?.fullName || user?.name || 'Approver';
+      const currentUserName = user?.name || 'Approver';
       const currentDate = new Date().toISOString().split('T')[0];
       
       console.log(`❌ [Reject] Processing rejection for: ${doc.title}`);
@@ -1340,8 +1360,28 @@ const Approvals = () => {
         comment: userComments.join(' ')
       };
       
-      // Add to approval history
-      setApprovalHistory(prev => [rejectedDoc, ...prev]);
+      // Add to approval history state
+      setApprovalHistory(prev => {
+        const updated = [rejectedDoc, ...prev];
+        // Save to localStorage for persistence
+        try {
+          localStorage.setItem('approval-history-new', JSON.stringify(updated));
+          console.log('✅ [Approval History] Saved rejected document to localStorage');
+        } catch (error) {
+          console.error('❌ [Approval History] Error saving to localStorage:', error);
+        }
+        return updated;
+      });
+      
+      // Dispatch event to update Dashboard widget to remove rejected card
+      window.dispatchEvent(new CustomEvent('approval-card-status-changed', {
+        detail: { 
+          docId,
+          action: 'rejected',
+          rejectedBy: currentUserName,
+          rejectedDate: currentDate
+        }
+      }));
       
       const rejectionMessage = (isApprovalChainBypass && routingType)
         ? `Rejection bypassed. Workflow continues in ${routingType} mode. Next recipient will receive the card.`
@@ -3326,17 +3366,26 @@ const Approvals = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {[...approvalHistory, ...recentApprovals].map((doc) => (
-                    <Card key={doc.id} className={`hover:shadow-md transition-shadow ${doc.title === 'Course Curriculum Update' ? 'border-destructive bg-red-50 animate-pulse' : ''}`}>
+                  {[...approvalHistory, ...recentApprovals].map((doc) => {
+                    // Check if this is an emergency card
+                    const isEmergency = doc.isEmergency || doc.priority === 'emergency' || doc.title === 'Course Curriculum Update';
+                    
+                    return (
+                    <Card key={doc.id} className={`relative hover:shadow-md transition-shadow ${isEmergency ? 'border-destructive bg-red-50 animate-pulse' : ''}`}>
                       <CardContent className="p-6">
+                        {/* Emergency indicator - blinking light for emergency cards */}
+                        {isEmergency && (
+                          <div className="absolute top-2 left-2 w-3 h-3 bg-red-500 rounded-full animate-ping" />
+                        )}
+                        
                         <div className="flex flex-col lg:flex-row gap-6">
                           <div className="flex-1 space-y-4">
                             <div className="flex items-start justify-between">
                               <div>
                                 <h3 className="font-semibold text-lg flex items-center gap-2">
                                   {doc.title}
-                                  {doc.title === 'Course Curriculum Update' && (
-                                    <Badge variant="destructive" className="text-xs">
+                                  {isEmergency && (
+                                    <Badge variant="destructive" className="text-xs animate-pulse">
                                       <AlertTriangle className="w-3 h-3 mr-1" />
                                       EMERGENCY
                                     </Badge>
@@ -3455,7 +3504,8 @@ const Approvals = () => {
                         </div>
                       </CardContent>
                     </Card>
-                  ))}
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -3477,7 +3527,7 @@ const Approvals = () => {
             onComplete={() => handleDocumensoComplete(documensoDocument.id)}
             document={documensoDocument}
             user={{
-              name: user?.fullName || user?.name || 'User',
+              name: user?.name || 'User',
               email: user?.email || 'user@university.edu',
               role: user?.role || 'Employee'
             }}
